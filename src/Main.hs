@@ -15,24 +15,16 @@ import           Data.Function             ((&))
 import           Network.Wreq
 import           Streamly
 import qualified Streamly.Prelude       as S
-
+import           System.Environment
 
 main :: IO ()
 main = do
+  [baseUrl, start, end] <- getArgs
   putStrLn "start downloading..."
-
-  let baseUrl = "http://fastly.vod.hls.ttvnw.net"
-      path    = "/ff5ed1e62db80d5708d4_amazhs_29515275280_913374868/chunked/"
-      port    = "80"
-
   runStream . serially $ do
-
-    let urls = fmap (\ts -> baseUrl ++ ":" ++ port ++ path ++ show ts ++ ".ts")
-                    [0..460]
-               -- [ "http://localhost/1.ts"
-               -- , "http://localhost/2.ts"
-               -- , "http://localhost/3.ts"
-               -- ]
+    let s = read start :: Int
+        e = read end :: Int
+        urls = fmap (\ts -> baseUrl ++ show ts ++ ".ts") [s .. e]
     S.fromFoldableM $ fmap appendTs urls
 
 
