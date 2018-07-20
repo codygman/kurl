@@ -1,30 +1,32 @@
-{ nixpkgs ? import <nixpkgs> {}, compiler ? "default", doBenchmark ? false }:
-
+{ withHoogle ? true
+}:
 let
+  pkgs = import <nixpkgs> {};
 
-  inherit (nixpkgs) pkgs;
+  hspkgs = pkgs.haskellPackages.override {
+    overrides = new: old: {
+      # package overrides goes here
 
-  f = { mkDerivation, base, bytestring, HTTP, lens, mtl, stdenv
-      , text
-      }:
-      mkDerivation {
-        pname = "kurl";
-        version = "0.1.0.0";
-        src = ./.;
-        isLibrary = false;
-        isExecutable = true;
-        executableHaskellDepends = [ base bytestring HTTP lens mtl text ];
-        license = stdenv.lib.licenses.bsd3;
-      };
+      streamly = new.callCabal2nix "streamly" (pkgs.fetchFromGitHub {
+        owner  = "composewell";
+        repo   = "streamly";
+        rev    = "6ab3ce0655191d0f66def2893686f9ea1c408e77";
+        sha256 = "0hmvxmfyirxv0d8jsfwba9876jv3741gymib54l0md19hwd5y1vf";
+      }) {};
 
-  haskellPackages = if compiler == "default"
-                       then pkgs.haskellPackages
-                       else pkgs.haskell.packages.${compiler};
+      # end of package overrides
 
-  variant = if doBenchmark then pkgs.haskell.lib.doBenchmark else pkgs.lib.id;
+      ghc = if withHoogle
+              then old.ghc // { withPackages = old.ghc.withHoogle; }
+              else old.ghc;
+    };
+  };
 
-  drv = variant (haskellPackages.callPackage f {});
+  drv = hspkgs.callPackage (import ./default.nix) {
 
+    # parameters to the final derive. normally includes package overrides
+    #
+    # and of parameters
+  };
 in
-
   if pkgs.lib.inNixShell then drv.env else drv
