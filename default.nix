@@ -1,14 +1,15 @@
-{ mkDerivation, base, bytestring, lens, mtl, stdenv, streamly, text
-, wreq
+{ mkDerivation, aeson, base, bytestring, lens, lens-aeson, mtl
+, split, stdenv, streamly, text, time, wreq
 }:
 mkDerivation {
   pname = "kurl";
   version = "0.1.0.0";
   src = ./.;
-  isLibrary = false;
+  isLibrary = true;
   isExecutable = true;
+  libraryHaskellDepends = [ base split ];
   executableHaskellDepends = [
-    base bytestring lens mtl streamly text wreq
+    aeson base bytestring lens lens-aeson mtl streamly text time wreq
   ];
   license = stdenv.lib.licenses.bsd3;
 }
