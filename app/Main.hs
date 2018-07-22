@@ -12,20 +12,30 @@ import qualified Data.Text              as T
 
 import           Rename                 (vodRespMapper)
 import           Parse                  (getIdx, parseDuration)
-import           Twitch                 (makeVodBaseUrl)
+import           Twitch                 (getVodBaseUrl, getVodTitle, getVodUserName)
 import           TsIO                   (processM3U8, processTS)
 
 
 main :: IO ()
 main = do
-  [vodId, start, end, output] <- getArgs
+  [vodId, start, end] <- getArgs
   printf "start downloading vod: %s ...\n"  vodId
 
-  vodBaseUrl <- makeVodBaseUrl vodId
+  vodBaseUrl <- getVodBaseUrl vodId
+  -- vodTitle   <- getVodTitle vodId
+  vodUserName <- getVodUserName vodId
 
   printf "vod base url => %s\n" vodBaseUrl
 
-  let m3u8file = "index-dvr.m3u8"
+  let startTime = T.pack start
+      endTime = T.pack end
+      -- m3u8file :: T.Text
+      m3u8file = "index-dvr.m3u8"
+      -- mp4file  :: T.Text
+      fileExt = ".mp4"
+      fileName  = T.intercalate "_" $ T.pack <$> [ vodId , filter (/= ':') start , filter (/= ':') end ]
+      mp4file  = vodUserName <> "_" <> fileName <> fileExt
+
   processM3U8 vodBaseUrl m3u8file
 
   m3u8Content <- readFile (T.unpack m3u8file)
@@ -38,4 +48,4 @@ main = do
     S.fromFoldableM $ fmap (processTS vodBaseUrl) files
 
   printf "ts files download completed.\n"
-  printf "ffmpeg -i %s -c:v copy -c:a copy -t %s %s\n" m3u8file end output
+  printf "ffmpeg -i %s -c:v copy -c:a copy -t %s %s\n" m3u8file endTime mp4file

@@ -8,6 +8,8 @@ module Parse
 import Data.List
 import Data.List.Split
 
+
+
 filterTime :: [String] -> [String]
 filterTime lines =
   let prefix = "#EXTINF:"
