@@ -1,15 +1,19 @@
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE TemplateHaskell   #-}
 
 
 module Twitch
   ( getVodBaseUrl
   , getVodTitle
   , getVodUserName
+  , twitchAPI
   ) where
 
 import           Data.Text
 import           Data.Text.Encoding        (encodeUtf8, decodeUtf8)
 import           Data.Aeson
+import           Data.Aeson.TH
 import           Data.Aeson.Lens
 import qualified Data.ByteString.Char8  as CB
 import qualified Data.ByteString.Lazy   as LB
@@ -18,8 +22,37 @@ import           Text.Printf
 import           Control.Lens
 import           Data.Function             ((&))
 
+import           GHC.Generics
+import           Rename                 (vodRespMapper)
+import           Data.Map               (Map)
+-- TODO: simplify API calls for vodBaseUrl and getVodUserName
 
-getVodBaseUrl :: String -> IO Text
+newtype VodArray = VodArray
+  { vodArray :: [VodResponse]
+  } deriving (Show ,Generic)
+
+data VodResponse = VodResponse
+  { id            :: !Text
+  , user_id       :: !Text
+  , title         :: !Text
+  , description   :: !Text
+  , created_at    :: !Text
+  , published_at  :: !Text
+  , url           :: !Text
+  , thumbnail_url :: !Text
+  , viewable      :: !Text
+  , view_count    :: !Int
+  , language      :: !Text
+  , vodtype       :: !Text
+  , duration      :: !Text
+  } deriving (Show, Generic)
+
+-- getLenses ''VodResponse
+
+deriveJSON defaultOptions { fieldLabelModifier = const "data"  } ''VodArray
+deriveJSON defaultOptions { fieldLabelModifier = vodRespMapper } ''VodResponse
+
+
 getVodBaseUrl vodId = do
   thumbnail <- getVodFieldInfo "thumbnail_url" (decodeUtf8 . CB.pack $ vodId)
   return $ extractBaseUrl thumbnail
@@ -77,6 +110,15 @@ getTwitchVodField field apiUrl clientId vodId = do
                       . key field
                       . _String
 
+twitchAPI :: Text -> Text -> Text -> IO [VodResponse]
+twitchAPI apiUrl clientId vodId = do
+  let url  :: String
+      url   = printf "%s?id=%s" apiUrl vodId
+      opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
+  r <- asJSON =<< getWith opts url -- :: IO (Response LB.ByteString)
+  return (vodArray (r ^. responseBody))
+
+
 extractBaseUrl :: Text -> Text
 extractBaseUrl url = split (== '/' ) url !! 4
 
@@ -103,28 +145,3 @@ extractBaseUrl url = split (== '/' ) url !! 4
 --   }],
 --   "pagination":{"cursor":"eyJiIjpudWxsLCJhIjoiMTUwMzQ0MTc3NjQyNDQyMjAwMCJ9"}
 -- }
-
-
-
-
-
--- data VodResponse = VodResponse
---   { id            :: !Text
---   , user_id       :: !Text
---   , title         :: !Text
---   , description   :: !Text
---   , created_at    :: !Text
---   , published_at  :: !Text
---   , url           :: !Text
---   , thumbnail_url :: !Text
---   , viewable      :: !Text
---   , view_count    :: !Int
---   , language      :: !Text
---   , vodtype       :: !Text
---   , duration      :: !Text
---   } deriving (Show, Generic)
-
--- getLenses ''VodResponse
-
--- deriveJSON defaultOptions { fieldLabelModifier = vodRespMapper } ''VodResponse
-

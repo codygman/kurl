@@ -10,7 +10,6 @@ import           Streamly
 import qualified Streamly.Prelude       as S
 import qualified Data.Text              as T
 
-import           Rename                 (vodRespMapper)
 import           Parse                  (getIdx, parseDuration)
 import           Twitch                 (getVodBaseUrl, getVodTitle, getVodUserName)
 import           TsIO                   (processM3U8, processTS)
