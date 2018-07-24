@@ -11,7 +11,8 @@ import qualified Streamly.Prelude       as S
 import qualified Data.Text              as T
 
 import           Parse                  (getIdx, parseDuration)
-import           Twitch                 (getVodBaseUrl, getVodTitle, getVodUserName)
+import           Twitch                 (getVideoInfo, VideoInfo(..))
+import           Data.Map                  (Map)
 import           TsIO                   (processM3U8, processTS)
 
 
@@ -20,9 +21,9 @@ main = do
   [vodId, start, end] <- getArgs
   printf "start downloading vod: %s ...\n"  vodId
 
-  vodBaseUrl <- getVodBaseUrl vodId
-  -- vodTitle   <- getVodTitle vodId
-  vodUserName <- getVodUserName vodId
+  videoInfo  <- getVideoInfo vodId
+  let vodBaseUrl  = videoinfo_baseUrl videoInfo
+      vodUserName = videoinfo_userDisplayName videoInfo
 
   printf "vod base url => %s\n" vodBaseUrl
 

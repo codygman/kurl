@@ -1,16 +1,17 @@
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE TemplateHaskell   #-}
 
 
 module Twitch
-  ( getVodBaseUrl
-  , getVodTitle
-  , getVodUserName
-  , twitchAPI
+  ( twitchAPI
+  , getVideoInfo
+  , VideoInfo(..)
   ) where
 
-import           Data.Text
+
+import           Prelude                hiding (length)
+import           Data.Text              hiding (drop)
 import           Data.Text.Encoding        (encodeUtf8, decodeUtf8)
 import           Data.Aeson
 import           Data.Aeson.TH
@@ -21,127 +22,83 @@ import           Network.Wreq
 import           Text.Printf
 import           Control.Lens
 import           Data.Function             ((&))
-
+import           Data.Monoid               ((<>))
 import           GHC.Generics
-import           Rename                 (vodRespMapper)
-import           Data.Map               (Map)
--- TODO: simplify API calls for vodBaseUrl and getVodUserName
 
-newtype VodArray = VodArray
-  { vodArray :: [VodResponse]
+
+newtype TwitchResp a = TwitchResp
+  { twitchresp_data :: [a]
   } deriving (Show ,Generic)
 
-data VodResponse = VodResponse
-  { id            :: !Text
-  , user_id       :: !Text
-  , title         :: !Text
-  , description   :: !Text
-  , created_at    :: !Text
-  , published_at  :: !Text
-  , url           :: !Text
-  , thumbnail_url :: !Text
-  , viewable      :: !Text
-  , view_count    :: !Int
-  , language      :: !Text
-  , vodtype       :: !Text
-  , duration      :: !Text
+
+data VodResp = VodResp
+  { vodresp_id            :: !Text
+  , vodresp_user_id       :: !Text
+  , vodresp_title         :: !Text
+  , vodresp_description   :: !Text
+  , vodresp_created_at    :: !Text
+  , vodresp_published_at  :: !Text
+  , vodresp_url           :: !Text
+  , vodresp_thumbnail_url :: !Text
+  , vodresp_viewable      :: !Text
+  , vodresp_view_count    :: !Int
+  , vodresp_language      :: !Text
+  , vodresp_type          :: !Text
+  , vodresp_duration      :: !Text
   } deriving (Show, Generic)
 
--- getLenses ''VodResponse
 
-deriveJSON defaultOptions { fieldLabelModifier = const "data"  } ''VodArray
-deriveJSON defaultOptions { fieldLabelModifier = vodRespMapper } ''VodResponse
-
-
-getVodBaseUrl vodId = do
-  thumbnail <- getVodFieldInfo "thumbnail_url" (decodeUtf8 . CB.pack $ vodId)
-  return $ extractBaseUrl thumbnail
-
-
-getVodTitle :: String -> IO Text
-getVodTitle vodId = do
-  getVodFieldInfo "title" (decodeUtf8 . CB.pack $ vodId)
-
-
-getVodUserName :: String -> IO Text
-getVodUserName vodId = do
-  userId <- getVodFieldInfo "user_id" (decodeUtf8 . CB.pack $ vodId)
-  getUserDisplayName userId
+data UserResp = UserResp
+  { userresp_id                :: !Text
+  , userresp_login             :: !Text
+  , userresp_display_name      :: !Text
+  , userresp_type              :: !Text
+  , userresp_broadcaster_type  :: !Text
+  , userresp_description       :: !Text
+  , userresp_profile_image_url :: !Text
+  , userresp_offline_image_url :: !Text
+  , userresp_view_count        :: !Int
+  , userresp_email             :: !Text
+  } deriving (Show, Generic)
 
 
-getVodFieldInfo :: Text -> Text -> IO Text
-getVodFieldInfo field  vodId =
-  getTwitchVodField field
-                    "https://api.twitch.tv/helix/videos"
-                    "g9r0psjr0nn0a4ypjh62b6p568jhom"
-                    vodId
+deriveJSON defaultOptions { fieldLabelModifier = const "data"              } ''TwitchResp
+deriveJSON defaultOptions { fieldLabelModifier = drop (length "vodresp_")  } ''VodResp
+deriveJSON defaultOptions { fieldLabelModifier = drop (length "userresp_") } ''UserResp
 
 
-getUserDisplayName :: Text -> IO Text
-getUserDisplayName userId =
-  getTwitchUsersField "display_name"
-                      "https://api.twitch.tv/helix/users"
-                      "g9r0psjr0nn0a4ypjh62b6p568jhom"
-                      userId
+data VideoInfo = VideoInfo
+  { videoinfo_baseUrl :: Text
+  , videoinfo_userDisplayName :: Text
+  } deriving (Show)
 
 
-getTwitchUsersField :: Text -> Text -> Text -> Text -> IO Text
-getTwitchUsersField field apiUrl clientId vodId = do
+getVideoInfo :: String -> IO VideoInfo
+getVideoInfo vodId = do
+  let apiKey = "g9r0psjr0nn0a4ypjh62b6p568jhom"
+      endPoint = "https://api.twitch.tv/helix/"
+
+  resp <- twitchAPI (endPoint  <> "videos") apiKey (decodeUtf8 . CB.pack $ vodId)
+  let vodResp = twitchresp_data (resp ^. responseBody) !! 0
+      userId  = vodresp_user_id $ vodResp
+      baseUrl = extractBaseUrl . vodresp_thumbnail_url $ vodResp
+
+  resp <- twitchAPI (endPoint  <> "users") apiKey userId
+  let userResp = twitchresp_data (resp ^. responseBody) !! 0
+      username = userresp_display_name userResp
+
+  return $ VideoInfo { videoinfo_baseUrl         = baseUrl
+                     , videoinfo_userDisplayName = username
+                     }
+
+
+twitchAPI :: FromJSON a => Text -> Text -> Text -> IO (Response (TwitchResp a))
+twitchAPI apiUrl clientId idParam = do
   let url  :: String
-      url   = printf "%s?id=%s" apiUrl vodId
+      url   = printf "%s?id=%s" apiUrl idParam
       opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
-  response <- getWith opts url :: IO (Response LB.ByteString)
-  return $ response ^. responseBody
-                      . key "data"
-                      . nth 0
-                      . key field
-                      . _String
-
-
-getTwitchVodField :: Text -> Text -> Text -> Text -> IO Text
-getTwitchVodField field apiUrl clientId vodId = do
-  let url  :: String
-      url   = printf "%s?id=%s" apiUrl vodId
-      opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
-  response <- getWith opts url :: IO (Response LB.ByteString)
-  return $ response ^. responseBody
-                      . key "data"
-                      . nth 0
-                      . key field
-                      . _String
-
-twitchAPI :: Text -> Text -> Text -> IO [VodResponse]
-twitchAPI apiUrl clientId vodId = do
-  let url  :: String
-      url   = printf "%s?id=%s" apiUrl vodId
-      opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
-  r <- asJSON =<< getWith opts url -- :: IO (Response LB.ByteString)
-  return (vodArray (r ^. responseBody))
+  asJSON =<< getWith opts url
 
 
 extractBaseUrl :: Text -> Text
 extractBaseUrl url = split (== '/' ) url !! 4
-
-
-
--- https://vod109-ttvnw.akamaized.net/c3e83fffa00147116a7e_towelliee_29542954720_915104833/chunked/index-dvr.m3u8
--- https://vod.edgecast.hls.ttvnw.net/c3e83fffa00147116a7e_towelliee_29542954720_915104833/chunked/3.ts
-
--- {
---   "data": [{
---     "id": "234482848",
---     "user_id": "67955580",
---     "title": "-",
---     "description": "",
---     "created_at": "2018-03-02T20:53:41Z",
---     "published_at": "2018-03-02T20:53:41Z",
---     "url": "https://www.twitch.tv/videos/234482848",
---     "thumbnail_url": "https://static-cdn.jtvnw.net/s3_vods/bebc8cba2926d1967418_chewiemelodies_27786761696_805342775/thumb/thumb0-%{width}x%{height}.jpg",
---     "viewable": "public",
---     "view_count": 142,
---     "language": "en",
---     "type": "archive",
---     "duration": "3h8m33s"
---   }],
---   "pagination":{"cursor":"eyJiIjpudWxsLCJhIjoiMTUwMzQ0MTc3NjQyNDQyMjAwMCJ9"}
--- }
