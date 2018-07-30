@@ -1,11 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE FlexibleContexts   #-}
 
 
 module Twitch
   ( twitchAPI
   , getVideoInfo
+  , mkTwitchCfg
   , VideoInfo(..)
   ) where
 
@@ -24,6 +26,7 @@ import           Control.Lens
 import           Data.Function             ((&))
 import           Data.Monoid               ((<>))
 import           GHC.Generics
+import           Control.Monad.Reader
 
 
 newtype TwitchResp a = TwitchResp
@@ -73,17 +76,28 @@ data VideoInfo = VideoInfo
   } deriving (Show)
 
 
-getVideoInfo :: String -> IO VideoInfo
-getVideoInfo vodId = do
-  let apiKey = "g9r0psjr0nn0a4ypjh62b6p568jhom"
-      endPoint = "https://api.twitch.tv/helix/"
+data TwitchCfg = TwitchCfg
+  { twitchcfg_clientid :: !Text
+  , twitchcfg_endpoint :: !Text
+  }
 
-  resp <- twitchAPI (endPoint  <> "videos") apiKey (decodeUtf8 . CB.pack $ vodId)
+
+mkTwitchCfg :: Text -> Text -> TwitchCfg
+mkTwitchCfg endpoint clientid =
+  TwitchCfg
+    { twitchcfg_clientid = clientid
+    , twitchcfg_endpoint = endpoint
+    }
+
+
+getVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> m VideoInfo
+getVideoInfo vodId = do
+  resp <- twitchAPI "videos" (decodeUtf8 . CB.pack $ vodId)
   let vodResp = twitchresp_data (resp ^. responseBody) !! 0
       userId  = vodresp_user_id $ vodResp
       baseUrl = extractBaseUrl . vodresp_thumbnail_url $ vodResp
 
-  resp <- twitchAPI (endPoint  <> "users") apiKey userId
+  resp <- twitchAPI "users" userId
   let userResp = twitchresp_data (resp ^. responseBody) !! 0
       username = userresp_display_name userResp
 
@@ -92,12 +106,15 @@ getVideoInfo vodId = do
                      }
 
 
-twitchAPI :: FromJSON a => Text -> Text -> Text -> IO (Response (TwitchResp a))
-twitchAPI apiUrl clientId idParam = do
-  let url  :: String
+twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchResp a))
+twitchAPI apiKind idParam = do
+  cfg <- ask
+  let apiUrl   = twitchcfg_endpoint cfg <> apiKind
+      clientId = twitchcfg_clientid cfg
+      url  :: String
       url   = printf "%s?id=%s" apiUrl idParam
       opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
-  asJSON =<< getWith opts url
+  liftIO $ asJSON =<< getWith opts url
 
 
 extractBaseUrl :: Text -> Text
