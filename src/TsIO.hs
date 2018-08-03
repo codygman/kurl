@@ -4,11 +4,13 @@
 module TsIO
   ( processM3U8
   , processTS
+  , writeComments
   ) where
 
 
 import           Data.Text                 (Text)
 import qualified Data.Text              as T
+import qualified Data.Text.IO           as TI
 import qualified Data.ByteString        as B
 import qualified Data.ByteString.Lazy   as LB
 import           Text.Printf               (printf)
@@ -50,3 +52,14 @@ writeTs :: Text -> B.ByteString -> IO ()
 writeTs filename  bs = do
   printf "writing => %s\n"  filename
   B.writeFile (T.unpack filename) bs
+
+
+writeComments :: String -> [(Text, Text, Text)] -> IO ()
+writeComments vodId ts = do
+  let filename :: String
+      filename = printf "all_comments_%s.txt" vodId
+  printf "writing => %s\n"  filename
+  TI.writeFile filename (foldMap destructTup ts)
+  where
+    destructTup :: (Text, Text, Text) -> Text
+    destructTup (a,b,c) = T.pack $ printf "%-24s, %-15s, \"%s\"\n" a b c

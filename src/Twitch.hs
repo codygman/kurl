@@ -9,8 +9,11 @@ module Twitch
   , getVideoInfo
   , mkTwitchCfg
   , getVideoComment
-  , getVideoCommentOfUser
+  , getVideoAllComments
+  , comment_message
+  , comment_commenter
   , VideoInfo(..)
+  , Comment(..)
   ) where
 
 
@@ -30,7 +33,7 @@ import           Data.Monoid               ((<>))
 import           GHC.Generics
 import           Control.Monad.Reader
 -- import           Control.Monad.Reader.Class
-
+import           Data.Maybe (fromMaybe)
 
 
 newtype TwitchResp a = TwitchResp
@@ -65,7 +68,7 @@ data UserResp = UserResp
   , userresp_profile_image_url :: !Text
   , userresp_offline_image_url :: !Text
   , userresp_view_count        :: !Int
-  , userresp_email             :: !Text
+  , userresp_email             :: Maybe Text
   } deriving (Show, Generic)
 
 
@@ -187,25 +190,35 @@ twitchAPI apiKind idParam = do
   liftIO $ asJSON =<< getWith opts url
 
 
-getVideoComment :: (MonadIO m, MonadReader TwitchCfg m) => Text -> m [Comment]
-getVideoComment vodId = do
+
+getVideoComment :: (MonadIO m, MonadReader TwitchCfg m) => String -> Float -> m [Comment]
+getVideoComment vodId offset = do
   cfg <- ask
   let clientId = twitchcfg_clientid cfg
       url  :: String
-      url   = printf "https://api.twitch.tv/v5/videos/%s/comments" vodId
+      url   = printf "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f" vodId offset
       opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
                        & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
   r <- liftIO $ asJSON =<< getWith opts url
   return $  commentresp_data (r ^. responseBody)
 
 
-getVideoCommentOfUser :: (MonadIO m, MonadReader TwitchCfg m) => Text -> Text -> m [Text]
-getVideoCommentOfUser vodId name = do
-  comments <- getVideoComment vodId
-  return $ comments ^.. folded
-                      . filtered ((== name) . (view (comment_commenter . commenter_name)))
-                      . comment_message
-                      . message_body
+
+getVideoAllComments :: (MonadIO m, MonadReader TwitchCfg m) => String -> m [(Text, Text, Text)]
+getVideoAllComments vodId = do
+  comments <- getVideoAllComments' 0.0 0.0
+  let createdAtLens   = Getter (comment_created_at)
+      displayNameLens = Getter (comment_commenter . commenter_display_name)
+      messageBodyLens = Getter (comment_message . message_body)
+  return $ comments ^.. traverse . runGetter ((,,) <$> createdAtLens <*> displayNameLens <*> messageBodyLens)
+  where
+    getVideoAllComments' prevOffset currOffset = do
+      comments <- getVideoComment vodId currOffset
+      let nextOffset = fromMaybe 0.0 $ lastOf (traverse . comment_content_offset_seconds) comments
+      liftIO $ printf "downloading chat comment from %f seconds\n" currOffset
+      restOfComments <-  if currOffset /= nextOffset then getVideoAllComments' currOffset nextOffset else return []
+      return $ comments ++ restOfComments
+
 
 
 extractBaseUrl :: Text -> Text

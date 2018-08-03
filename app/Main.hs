@@ -11,19 +11,22 @@ import qualified Streamly.Prelude       as S
 import qualified Data.Text              as T
 
 import           Parse                  (getIdx, parseDuration)
-import           Twitch                 (getVideoInfo, mkTwitchCfg, VideoInfo(..))
+import           Twitch                 (getVideoInfo, getVideoAllComments, mkTwitchCfg, VideoInfo(..))
 -- import           Data.Map                  (Map)
-import           TsIO                   (processM3U8, processTS)
+import           TsIO                   (processM3U8, processTS, writeComments)
 import           Control.Monad.Reader   (runReaderT)
 
 
 main :: IO ()
 main = do
   [vodId, start, end] <- getArgs
-  printf "start downloading vod: %s ...\n"  vodId
-
   let cfg = mkTwitchCfg "https://api.twitch.tv/helix/" "g9r0psjr0nn0a4ypjh62b6p568jhom"
 
+  printf "start downloading all comments of vod: %s ...\n"  vodId
+  videoComments <- runReaderT (getVideoAllComments vodId) cfg
+  writeComments vodId videoComments
+
+  printf "start downloading ts files of vod: %s ...\n"  vodId
   videoInfo  <- runReaderT (getVideoInfo vodId) cfg
   let vodBaseUrl  = videoinfo_baseUrl videoInfo
       vodUserName = videoinfo_userDisplayName videoInfo
