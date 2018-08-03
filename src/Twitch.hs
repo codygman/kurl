@@ -30,51 +30,51 @@ import           Text.Printf
 import           Control.Lens
 import           Data.Function             ((&))
 import           Data.Monoid               ((<>))
-import           GHC.Generics
+import           GHC.Generics           (Generic)
 import           Control.Monad.Reader
 -- import           Control.Monad.Reader.Class
 import           Data.Maybe (fromMaybe)
 
 
-newtype TwitchResp a = TwitchResp
-  { twitchresp_data :: [a]
-  } deriving (Show ,Generic)
-
-
-data VodResp = VodResp
-  { vodresp_id            :: !Text
-  , vodresp_user_id       :: !Text
-  , vodresp_title         :: !Text
-  , vodresp_description   :: !Text
-  , vodresp_created_at    :: !Text
-  , vodresp_published_at  :: !Text
-  , vodresp_url           :: !Text
-  , vodresp_thumbnail_url :: !Text
-  , vodresp_viewable      :: !Text
-  , vodresp_view_count    :: !Int
-  , vodresp_language      :: !Text
-  , vodresp_type          :: !Text
-  , vodresp_duration      :: !Text
+newtype TwitchData a = TwitchData
+  { _twitch_data :: [a]
   } deriving (Show, Generic)
 
 
-data UserResp = UserResp
-  { userresp_id                :: !Text
-  , userresp_login             :: !Text
-  , userresp_display_name      :: !Text
-  , userresp_type              :: !Text
-  , userresp_broadcaster_type  :: !Text
-  , userresp_description       :: !Text
-  , userresp_profile_image_url :: !Text
-  , userresp_offline_image_url :: !Text
-  , userresp_view_count        :: !Int
-  , userresp_email             :: Maybe Text
+data Video = Video
+  { _video_id            :: !Text
+  , _video_user_id       :: !Text
+  , _video_title         :: !Text
+  , _video_description   :: !Text
+  , _video_created_at    :: !Text
+  , _video_published_at  :: !Text
+  , _video_url           :: !Text
+  , _video_thumbnail_url :: !Text
+  , _video_viewable      :: !Text
+  , _video_view_count    :: !Int
+  , _video_language      :: !Text
+  , _video_type          :: !Text
+  , _video_duration      :: !Text
   } deriving (Show, Generic)
 
 
-newtype CommentResp = CommentResp
-  { commentresp_data :: [Comment]
-  } deriving (Show ,Generic)
+data User = User
+  { _user_id                :: !Text
+  , _user_login             :: !Text
+  , _user_display_name      :: !Text
+  , _user_type              :: !Text
+  , _user_broadcaster_type  :: !Text
+  , _user_description       :: !Text
+  , _user_profile_image_url :: !Text
+  , _user_offline_image_url :: !Text
+  , _user_view_count        :: !Int
+  , _user_email             :: Maybe Text
+  } deriving (Show, Generic)
+
+
+newtype CommentData = CommentData
+  { _comment_data :: [Comment]
+  } deriving (Show, Generic)
 
 
 data Comment = Comment
@@ -125,10 +125,10 @@ data UserBadge = UserBadge
   } deriving (Show, Generic)
 
 
-deriveJSON defaultOptions { fieldLabelModifier = const "data"               } ''TwitchResp
-deriveJSON defaultOptions { fieldLabelModifier = const "comments"           } ''CommentResp
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "vodresp_")   } ''VodResp
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "userresp_")  } ''UserResp
+deriveJSON defaultOptions { fieldLabelModifier = const "data"                } ''TwitchData
+deriveJSON defaultOptions { fieldLabelModifier = const "comments"            } ''CommentData
+deriveJSON defaultOptions { fieldLabelModifier = drop (length "_video_")       } ''Video
+deriveJSON defaultOptions { fieldLabelModifier = drop (length "_user_")      } ''User
 deriveJSON defaultOptions { fieldLabelModifier = drop (length "_comment_")   } ''Comment
 deriveJSON defaultOptions { fieldLabelModifier = drop (length "_commenter_") } ''Commenter
 deriveJSON defaultOptions { fieldLabelModifier = drop (length "_message_")   } ''Message
@@ -136,6 +136,10 @@ deriveJSON defaultOptions { fieldLabelModifier = drop (length "_fragment_")  } '
 deriveJSON defaultOptions { fieldLabelModifier = drop (length "_userbadge_") } ''UserBadge
 
 
+makeLenses ''TwitchData
+makeLenses ''Video
+makeLenses ''User
+makeLenses ''CommentData
 makeLenses ''Comment
 makeLenses ''Commenter
 makeLenses ''Message
@@ -164,22 +168,19 @@ mkTwitchCfg endpoint clientid =
 
 
 getVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> m VideoInfo
-getVideoInfo vodId = do
-  resp <- twitchAPI "videos" (decodeUtf8 . CB.pack $ vodId)
-  let vodResp = twitchresp_data (resp ^. responseBody) !! 0
-      userId  = vodresp_user_id $ vodResp
-      baseUrl = extractBaseUrl . vodresp_thumbnail_url $ vodResp
-
-  resp <- twitchAPI "users" userId
-  let userResp = twitchresp_data (resp ^. responseBody) !! 0
-      username = userresp_display_name userResp
-
+getVideoInfo _videoId = do
+  videoResp <- twitchAPI "videos" (decodeUtf8 . CB.pack $ _videoId)
+  let twitchData = videoResp ^. responseBody . twitch_data
+      userId     = twitchData ^?! traverse . video_user_id
+      baseUrl    = twitchData ^?! traverse . video_thumbnail_url . to extractBaseUrl
+  usersResp <- twitchAPI "users" userId
+  let username =  usersResp ^. responseBody . twitch_data ^?! traverse . user_display_name
   return $ VideoInfo { videoinfo_baseUrl         = baseUrl
                      , videoinfo_userDisplayName = username
                      }
 
 
-twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchResp a))
+twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchData a))
 twitchAPI apiKind idParam = do
   cfg <- ask
   let apiUrl   = twitchcfg_endpoint cfg <> apiKind
@@ -190,35 +191,32 @@ twitchAPI apiKind idParam = do
   liftIO $ asJSON =<< getWith opts url
 
 
-
 getVideoComment :: (MonadIO m, MonadReader TwitchCfg m) => String -> Float -> m [Comment]
-getVideoComment vodId offset = do
+getVideoComment _videoId offset = do
   cfg <- ask
   let clientId = twitchcfg_clientid cfg
       url  :: String
-      url   = printf "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f" vodId offset
+      url   = printf "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f" _videoId offset
       opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
                        & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
-  r <- liftIO $ asJSON =<< getWith opts url
-  return $  commentresp_data (r ^. responseBody)
-
+  resp <- liftIO $ asJSON =<< getWith opts url
+  return $ resp ^. responseBody . comment_data
 
 
 getVideoAllComments :: (MonadIO m, MonadReader TwitchCfg m) => String -> m [(Text, Text, Text)]
-getVideoAllComments vodId = do
+getVideoAllComments _videoId = do
   comments <- getVideoAllComments' 0.0 0.0
-  let createdAtLens   = Getter (comment_created_at)
-      displayNameLens = Getter (comment_commenter . commenter_display_name)
-      messageBodyLens = Getter (comment_message . message_body)
-  return $ comments ^.. traverse . runGetter ((,,) <$> createdAtLens <*> displayNameLens <*> messageBodyLens)
+  let time = Getter $ comment_created_at
+      name = Getter $ comment_commenter . commenter_display_name
+      mesg = Getter $ comment_message . message_body
+  return $ comments ^.. traverse . runGetter ((,,) <$> time <*> name <*> mesg)
   where
-    getVideoAllComments' prevOffset currOffset = do
-      comments <- getVideoComment vodId currOffset
-      let nextOffset = fromMaybe 0.0 $ lastOf (traverse . comment_content_offset_seconds) comments
-      liftIO $ printf "downloading chat comment from %f seconds\n" currOffset
-      restOfComments <-  if currOffset /= nextOffset then getVideoAllComments' currOffset nextOffset else return []
+    getVideoAllComments' psec csec = do
+      comments <- getVideoComment _videoId csec
+      let nsec = fromMaybe csec $ lastOf (traverse . comment_content_offset_seconds) comments
+      liftIO $ printf "downloading chat comment from %f seconds\n" csec
+      restOfComments <- if csec /= nsec then getVideoAllComments' csec nsec else return []
       return $ comments ++ restOfComments
-
 
 
 extractBaseUrl :: Text -> Text
