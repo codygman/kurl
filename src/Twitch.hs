@@ -129,7 +129,7 @@ data UserBadge = UserBadge
 
 deriveJSON defaultOptions { fieldLabelModifier = const "data"                } ''TwitchData
 deriveJSON defaultOptions { fieldLabelModifier = const "comments"            } ''CommentData
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "_video_")       } ''Video
+deriveJSON defaultOptions { fieldLabelModifier = drop (length "_video_")     } ''Video
 deriveJSON defaultOptions { fieldLabelModifier = drop (length "_user_")      } ''User
 deriveJSON defaultOptions { fieldLabelModifier = drop (length "_comment_")   } ''Comment
 deriveJSON defaultOptions { fieldLabelModifier = drop (length "_commenter_") } ''Commenter

@@ -12,6 +12,7 @@ module Parse
   , format4ffmpeg
   ) where
 
+
 import Data.List
 import Data.List.Split
 import Data.Time
@@ -50,9 +51,9 @@ getIdx pred duration m3u8 =
 
 
 parseDuration :: String -> Maybe UTCTime
-parseDuration x = parseRangeTime "%-Hh%-Mm%Ss"
-    <|> parseRangeTime "%-Mm%Ss"
-    <|> parseRangeTime "%-Hh%Mm"
+parseDuration x = parseRangeTime "%-Hh%-Mm%-Ss"
+    <|> parseRangeTime "%-Mm%-Ss"
+    <|> parseRangeTime "%-Hh%-Mm"
     <|> parseRangeTime "%-Hh"
     <|> parseRangeTime "%-Mm"
     <|> parseRangeTime "%-Ss"
