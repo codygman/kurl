@@ -101,7 +101,7 @@ data Commenter = Commenter
   , _commenter_bio          :: Maybe Text
   , _commenter_created_at   :: !Text
   , _commenter_updated_at   :: !Text
-  , _commenter_logo         :: !Text
+  , _commenter_logo         :: Maybe Text
   } deriving (Show, Generic)
 
 

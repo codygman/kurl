@@ -54,10 +54,10 @@ writeTs filename  bs = do
   B.writeFile (T.unpack filename) bs
 
 
-writeComments :: String -> [(Text, Text, Text)] -> IO ()
-writeComments vodId ts = do
+writeComments :: String -> Text -> [(Text, Text, Text)] -> IO ()
+writeComments vodId vodUserName ts = do
   let filename :: String
-      filename = printf "all_comments_%s.txt" vodId
+      filename = printf "%s_comments_%s.txt" vodUserName vodId
   printf "writing => %s\n"  filename
   TI.writeFile filename (foldMap destructTup ts)
   where
