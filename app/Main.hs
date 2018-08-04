@@ -10,7 +10,7 @@ import           Streamly
 import qualified Streamly.Prelude       as S
 import qualified Data.Text              as T
 
-import           Parse                  (getIdx, parseDuration, parseVodUrl, format4file, format4ffmpeg)
+import           Parse                  (getStartIdx, getEndIdx, parseDuration, parseVodUrl, format4file, format4ffmpeg)
 import           Twitch                 (getVideoInfo, getChatLogs, mkTwitchCfg, VideoInfo(..))
 import           TsIO                   (processM3U8, processTS, writeComments)
 import           Control.Monad.Reader   (runReaderT)
@@ -85,8 +85,8 @@ main' (CmdOpts vod start end chat) = do
   processM3U8 vodBaseUrl m3u8file
 
   m3u8Content <- readFile (T.unpack m3u8file)
-  let sIdx = getIdx startUTC m3u8Content
-      eIdx = getIdx endUTC m3u8Content
+  let sIdx = getStartIdx startUTC m3u8Content
+      eIdx = getEndIdx endUTC m3u8Content
   printf "download ts range: %d ~ %d\n" sIdx eIdx
 
   runStream . serially $ do
