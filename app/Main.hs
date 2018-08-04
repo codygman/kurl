@@ -92,7 +92,8 @@ main' (CmdOpts vod start end chat) = do
   runStream . serially $ do
     S.fromFoldableM $ fmap (processTS vodBaseUrl) [ sIdx .. eIdx ]
 
+  let durationUTC = addUTCTime (diffUTCTime endUTC startUTC) (UTCTime { utctDay = toEnum 0, utctDayTime = toEnum 0 })
   printf "ts files download completed.\n"
-  printf "ffmpeg -i %s -t %s -c:v copy -c:a copy %s\n" (format4ffmpeg endUTC) m3u8file mp4file
+  printf "ffmpeg -t %s -i %s -c:v copy -c:a copy %s\n" (format4ffmpeg durationUTC) m3u8file mp4file
 
 
