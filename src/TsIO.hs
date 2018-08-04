@@ -27,7 +27,7 @@ processTS vodBaseUrl tsIdx = do
 
 processM3U8 :: Text -> Text -> IO ()
 processM3U8 vodBaseUrl m3u8Filename = do
-  printf "downloading => %s%s\n" vodBaseUrl m3u8Filename
+  printf "downloading => %s/%s\n" vodBaseUrl m3u8Filename
   processFile vodBaseUrl m3u8Filename
 
 

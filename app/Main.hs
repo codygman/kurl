@@ -11,7 +11,7 @@ import qualified Streamly.Prelude       as S
 import qualified Data.Text              as T
 
 import           Parse                  (getIdx, parseDuration, formatDuration)
-import           Twitch                 (getVideoInfo, getVideoAllComments, mkTwitchCfg, VideoInfo(..))
+import           Twitch                 (getVideoInfo, getChatLogs, mkTwitchCfg, VideoInfo(..))
 import           TsIO                   (processM3U8, processTS, writeComments)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.Maybe
@@ -35,11 +35,14 @@ cmd = CmdOpts
   <*> switch    ( long "chat"  <> short 'c' <> help "download vod chat log" )
 
 
+ -- TODO : parsing input url to vodId
+
+
 main :: IO ()
 main = main' =<< execParser opts
   where
     opts = info ( cmd <**> helper )
-                (fullDesc <> progDesc "Download twitch vod TARGET" <> header "kurl - a twitch vod downloader")
+                ( fullDesc <> progDesc "Download twitch vod TARGET" <> header "kurl - a twitch vod downloader" )
 
 
 main' :: CmdOpts -> IO ()
@@ -57,7 +60,7 @@ main' (CmdOpts vodId start end chat) = do
 
   _ <- if not chat then return () else do
     printf "start downloading all comments of vod: %s ...\n"  vodId
-    videoComments <- runReaderT (getVideoAllComments vodId) cfg
+    videoComments <- runReaderT (getChatLogs vodId startUTC endUTC) cfg
     writeComments vodId vodUserName videoComments
 
   printf "start downloading ts files of vod: %s ...\n"  vodId
@@ -78,8 +81,7 @@ main' (CmdOpts vodId start end chat) = do
   printf "download ts range: %d ~ %d\n" sIdx eIdx
 
   runStream . serially $ do
-    let files = [ sIdx .. eIdx ]
-    S.fromFoldableM $ fmap (processTS vodBaseUrl) files
+    S.fromFoldableM $ fmap (processTS vodBaseUrl) [ sIdx .. eIdx ]
 
   printf "ts files download completed.\n"
   printf "ffmpeg -i %s -c:v copy -c:a copy -t %s %s\n" m3u8file endTime mp4file

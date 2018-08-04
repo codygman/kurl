@@ -9,7 +9,7 @@ module Twitch
   , getVideoInfo
   , mkTwitchCfg
   , getVideoComment
-  , getVideoAllComments
+  , getChatLogs
   , comment_message
   , comment_commenter
   , VideoInfo(..)
@@ -34,6 +34,8 @@ import           GHC.Generics           (Generic)
 import           Control.Monad.Reader
 -- import           Control.Monad.Reader.Class
 import           Data.Maybe (fromMaybe)
+import           Data.Time
+import           Parse (parseDuration)
 
 
 newtype TwitchData a = TwitchData
@@ -203,68 +205,23 @@ getVideoComment _videoId offset = do
   return $ resp ^. responseBody . comment_data
 
 
-getVideoAllComments :: (MonadIO m, MonadReader TwitchCfg m) => String -> m [(Text, Text, Text)]
-getVideoAllComments _videoId = do
-  comments <- getVideoAllComments' 0.0 0.0
+getChatLogs :: (MonadIO m, MonadReader TwitchCfg m) => String -> UTCTime -> UTCTime -> m [(Text, Text, Text)]
+getChatLogs vodId startUTC endUTC = do
+  comments <- getChatLogs' ssec ssec
   let time = Getter $ comment_created_at
       name = Getter $ comment_commenter . commenter_display_name
       mesg = Getter $ comment_message . message_body
   return $ comments ^.. traverse . runGetter ((,,) <$> time <*> name <*> mesg)
   where
-    getVideoAllComments' psec csec = do
-      comments <- getVideoComment _videoId csec
+    ssec = fromRational . toRational . utctDayTime $ startUTC
+    esec = fromRational . toRational . utctDayTime $ endUTC
+    getChatLogs' psec csec = do
+      comments <- getVideoComment vodId csec
       let nsec = fromMaybe csec $ lastOf (traverse . comment_content_offset_seconds) comments
       liftIO $ printf "downloading chat comment from %f seconds\n" csec
-      restOfComments <- if csec /= nsec then getVideoAllComments' csec nsec else return []
+      restOfComments <- if csec == nsec || esec < nsec  then return [] else getChatLogs' csec nsec
       return $ comments ++ restOfComments
 
 
 extractBaseUrl :: Text -> Text
 extractBaseUrl url = split (== '/' ) url !! 4
-
--- {
---       "_id": "64043f37-ca25-4730-88e0-4204b1570bc8",
---       "created_at": "2018-07-29T16:06:30.962Z",
---       "updated_at": "2018-07-29T16:06:30.962Z",
---       "channel_id": "94814458",
---       "content_type": "video",
---       "content_id": "291249101",
---       "content_offset_seconds": 24.162,
---       "commenter": {
---         "display_name": "ekmett",
---         "_id": "94814458",
---         "name": "ekmett",
---         "type": "user",
---         "bio": "I write a lot of Haskell.",
---         "created_at": "2015-06-29T17:37:50.497754Z",
---         "updated_at": "2018-08-01T20:33:32.049696Z",
---         "logo": "https://static-cdn.jtvnw.net/jtv_user_pictures/2a523ddf-518c-4d49-b793-a1acb98b901f-profile_image-300x300.png"
---       },
---       "source": "chat",
---       "state": "published",
---       "message": {
---         "body": "ok, might as well get started!",
---         "fragments": [
---           {
---             "text": "ok, might as well get started!"
---           }
---         ],
---         "is_action": false,
---         "user_badges": [
---           {
---             "_id": "broadcaster",
---             "version": "1"
---           },
---           {
---             "_id": "subscriber",
---             "version": "0"
---           },
---           {
---             "_id": "premium",
---             "version": "1"
---           }
---         ],
---         "user_color": "#FF0000"
---       },
---       "more_replies": false
---     }
