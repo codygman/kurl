@@ -4,7 +4,8 @@ module Parse
   , getIdx
   , parseDuration
   , parseVodUrl
-  , formatDuration
+  , format4file
+  , format4ffmpeg
   ) where
 
 import Data.List
@@ -46,9 +47,14 @@ parseDuration x = parseRangeTime "%-Hh%-Mm%Ss"
     parseRangeTime timeFormat = parseTimeM True defaultTimeLocale timeFormat x
 
 
-formatDuration :: UTCTime -> String
-formatDuration = formatTime defaultTimeLocale "%-H-%-M-%S"
+format4file :: FormatTime t => t -> String
+format4file = formatTime defaultTimeLocale "%Hh%Mm%Ss"
 
 
-parseVodUrl:: String -> String
-parseVodUrl = reverse . takeWhile (/='/') . reverse
+format4ffmpeg :: FormatTime t => t -> String
+format4ffmpeg = formatTime defaultTimeLocale "%H:%M:%S"
+
+
+parseVodUrl :: String -> String
+parseVodUrl = reverse . takeWhile (/= '/') . reverse
+

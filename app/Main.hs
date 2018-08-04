@@ -10,7 +10,7 @@ import           Streamly
 import qualified Streamly.Prelude       as S
 import qualified Data.Text              as T
 
-import           Parse                  (getIdx, parseDuration, parseVodUrl, formatDuration)
+import           Parse                  (getIdx, parseDuration, parseVodUrl, format4file, format4ffmpeg)
 import           Twitch                 (getVideoInfo, getChatLogs, mkTwitchCfg, VideoInfo(..))
 import           TsIO                   (processM3U8, processTS, writeComments)
 import           Control.Monad.Reader   (runReaderT)
@@ -21,10 +21,10 @@ import           Data.String
 import           Data.Char
 
 data CmdOpts = CmdOpts
-  { vod   :: Vod
-  , start :: String
-  , end   :: String
-  , chat  :: Bool
+  { vod    :: Vod
+  , start  :: String
+  , end    :: String
+  , chat   :: Bool
   }
 
 data Vod = VodId String | VodUrl String
@@ -76,8 +76,8 @@ main' (CmdOpts vod start end chat) = do
 
   printf "vod base url => %s\n" vodBaseUrl
 
-  let startTime = formatDuration startUTC
-      endTime   = formatDuration endUTC
+  let startTime = format4file startUTC
+      endTime   = format4file endUTC
       m3u8file  = "index-dvr.m3u8"
       fileExt   = "mp4" :: T.Text
       mp4file   = T.pack $ printf "%s_%s_%s_%s.%s" vodUserName vodId startTime endTime fileExt :: T.Text
@@ -93,6 +93,6 @@ main' (CmdOpts vod start end chat) = do
     S.fromFoldableM $ fmap (processTS vodBaseUrl) [ sIdx .. eIdx ]
 
   printf "ts files download completed.\n"
-  printf "ffmpeg -i %s -c:v copy -c:a copy -t %s %s\n" m3u8file endTime mp4file
+  printf "ffmpeg -i %s -t %s -c:v copy -c:a copy %s\n" (format4ffmpeg endUTC) m3u8file mp4file
 
 
