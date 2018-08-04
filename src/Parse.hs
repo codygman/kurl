@@ -3,6 +3,7 @@ module Parse
   , getTime
   , getIdx
   , parseDuration
+  , parseVodUrl
   , formatDuration
   ) where
 
@@ -47,3 +48,7 @@ parseDuration x = parseRangeTime "%-Hh%-Mm%Ss"
 
 formatDuration :: UTCTime -> String
 formatDuration = formatTime defaultTimeLocale "%-H-%-M-%S"
+
+
+parseVodUrl:: String -> String
+parseVodUrl = reverse . takeWhile (/='/') . reverse

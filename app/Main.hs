@@ -10,32 +10,38 @@ import           Streamly
 import qualified Streamly.Prelude       as S
 import qualified Data.Text              as T
 
-import           Parse                  (getIdx, parseDuration, formatDuration)
+import           Parse                  (getIdx, parseDuration, parseVodUrl, formatDuration)
 import           Twitch                 (getVideoInfo, getChatLogs, mkTwitchCfg, VideoInfo(..))
 import           TsIO                   (processM3U8, processTS, writeComments)
 import           Control.Monad.Reader   (runReaderT)
 import           Data.Maybe
 import           Data.Time
 import           Options.Applicative
-
+import           Data.String
+import           Data.Char
 
 data CmdOpts = CmdOpts
-  { vodId :: String
+  { vod   :: Vod
   , start :: String
   , end   :: String
   , chat  :: Bool
   }
 
+data Vod = VodId String | VodUrl String
+
+instance IsString Vod where
+  fromString s = if all isDigit s then VodId s else VodUrl s
+
 
 cmd :: Parser CmdOpts
 cmd = CmdOpts
-  <$> strOption ( long "vod"   <> short 'v' <> metavar "TARGET" <> help "download TARGET videoid" )
+  <$> vodParser
   <*> strOption ( long "start" <> short 's' <> help "recording start offset" )
   <*> strOption ( long "end"   <> short 'e' <> help "recording end offset" )
   <*> switch    ( long "chat"  <> short 'c' <> help "download vod chat log" )
-
-
- -- TODO : parsing input url to vodId
+  where
+    vodParser = strArgument ( metavar "URL" <> help "twitch vod URL ex) https://www.twitch.tv/videos/012345678" )
+            <|> strOption ( long "vod" <> short 'v' <> metavar "VODID" <> help "download VODID" )
 
 
 main :: IO ()
@@ -46,7 +52,10 @@ main = main' =<< execParser opts
 
 
 main' :: CmdOpts -> IO ()
-main' (CmdOpts vodId start end chat) = do
+main' (CmdOpts vod start end chat) = do
+  let vodId = case vod of
+                VodId  vodId  -> vodId
+                VodUrl vodUrl -> parseVodUrl vodUrl
   let cfg = mkTwitchCfg "https://api.twitch.tv/helix/" "g9r0psjr0nn0a4ypjh62b6p568jhom"
 
   let (startUTC, endUTC) =
