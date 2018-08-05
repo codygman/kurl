@@ -1,28 +1,20 @@
-{ # here goes additional parameter for release build.
-  #
-  # end of additional project build parameter.
+{ target ? "kurl"
+, target-static ? "kurl-static"
 }:
+
 let
-  haskOverrides = pkgs: new: old:
-    with pkgs.haskell.lib; {
+  tgtf = pkgs: new: old: with pkgs.haskell.lib; {
+    ${target} = new.callPackage ./default.nix {};
+  };
 
-    # likewise shell.nix, here goes package overrides.
+  depf = import ./depends.nix;
 
-    streamly = new.callCabal2nix "streamly" (pkgs.fetchFromGitHub {
-      owner  = "composewell";
-      repo   = "streamly";
-      rev    = "6ab3ce0655191d0f66def2893686f9ea1c408e77";
-      sha256 = "0hmvxmfyirxv0d8jsfwba9876jv3741gymib54l0md19hwd5y1vf";
-    }) {};
+  lnkf = pkgs: new: old: with pkgs.haskell.lib; {
 
-    # end of package overrides.
-
-    project        = new.callPackage ./default.nix {};
-    project-static = overrideCabal
+    ${target-static} = overrideCabal
       (justStaticExecutables (new.callPackage ./default.nix {}))
       (oldDerivation: {
         configureFlags = [
-
           # cabal parameters goes here.
           # eg) "--ghc-option=-optl=-static"
           #     "--ghc-option=-optl=-L${pkgs.zlib.static}/lib"
@@ -34,15 +26,18 @@ let
 
   config = {
     packageOverrides = pkgs: {
-      haskellPackages = pkgs.haskellPackages.override {
-        overrides = haskOverrides pkgs;
+       haskellPackages = pkgs.haskellPackages.override {
+         overrides = builtins.foldl'
+                      (acc: f: pkgs.lib.composeExtensions acc (f pkgs))
+                      (_: _: {})
+                      [tgtf depf lnkf];
       };
     };
   };
 
-  drvPkgs = import <nixpkgs> { inherit config; };
+  pkgs = import <nixpkgs> { inherit config; };
 
 in
-{ project        = drvPkgs.haskellPackages.project;
-  # project-static = drvPkgs.haskellPackages.project-static;
+{ ${target} = pkgs.haskellPackages.${target};
+  # ${target-static} = pkgs.haskellPackages.${target-static};
 }

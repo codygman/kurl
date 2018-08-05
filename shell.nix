@@ -1,32 +1,41 @@
-{ withHoogle ? true
+{ useHoogle ? true
+, useGhcid ? true
+, target ? "kurl"
 }:
+
 let
-  pkgs = import <nixpkgs> {};
+  tgtf = pkgs: new: old: with pkgs.haskell.lib; {
+    ${target} = new.callPackage ./default.nix {};
+  };
 
-  hspkgs = pkgs.haskellPackages.override {
-    overrides = new: old: {
-      # package overrides goes here
+  depf = import ./depends.nix;
 
-      streamly = new.callCabal2nix "streamly" (pkgs.fetchFromGitHub {
-        owner  = "composewell";
-        repo   = "streamly";
-        rev    = "6ab3ce0655191d0f66def2893686f9ea1c408e77";
-        sha256 = "0hmvxmfyirxv0d8jsfwba9876jv3741gymib54l0md19hwd5y1vf";
-      }) {};
+  hgf = pkgs: new: old: {
+    ghc = if useHoogle
+            then old.ghc // { withPackages = old.ghc.withHoogle; }
+            else old.ghc;
+  };
 
-      # end of package overrides
+  ghcidf = pkgs: new: old: {
+    ${target} = if useGhcid
+                  then pkgs.haskell.lib.addBuildTool old.${target} old.ghcid
+                  else old.${target};
+  };
 
-      ghc = if withHoogle
-              then old.ghc // { withPackages = old.ghc.withHoogle; }
-              else old.ghc;
+  config = {
+    packageOverrides = pkgs: {
+      haskellPackages = pkgs.haskellPackages.override {
+        overrides = builtins.foldl'
+                              (acc: f: pkgs.lib.composeExtensions acc (f pkgs))
+                              (_: _: {})
+                              [ tgtf depf hgf ghcidf ];
+      };
     };
   };
 
-  drv = hspkgs.callPackage (import ./default.nix) {
+  pkgs = import <nixpkgs> { inherit config; };
 
-    # parameters to the final derive. normally includes package overrides
-    #
-    # and of parameters
-  };
 in
-  if pkgs.lib.inNixShell then drv.env else drv
+  if pkgs.lib.inNixShell
+    then pkgs.haskellPackages.${target}.env
+    else pkgs.haskellPackages.${target}
