@@ -7,13 +7,13 @@
 module Twitch
   ( twitchAPI
   , getVideoInfo
-  , mkTwitchCfg
   , getVideoComment
   , getChatLogs
   , comment_message
   , comment_commenter
   , VideoInfo(..)
   , Comment(..)
+  , TwitchCfg(..)
   ) where
 
 
@@ -159,14 +159,6 @@ data TwitchCfg = TwitchCfg
   { twitchcfg_clientid :: !Text
   , twitchcfg_endpoint :: !Text
   }
-
-
-mkTwitchCfg :: Text -> Text -> TwitchCfg
-mkTwitchCfg endpoint clientid =
-  TwitchCfg
-    { twitchcfg_clientid = clientid
-    , twitchcfg_endpoint = endpoint
-    }
 
 
 getVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> m VideoInfo
