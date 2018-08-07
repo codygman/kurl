@@ -1,6 +1,7 @@
 { useHoogle ? true
 , useGhcid ? true
 , target ? "kurl"
+, compiler ? "ghc843"
 }:
 
 let
@@ -24,11 +25,15 @@ let
 
   config = {
     packageOverrides = pkgs: {
-      haskellPackages = pkgs.haskellPackages.override {
-        overrides = builtins.foldl'
-                              (acc: f: pkgs.lib.composeExtensions acc (f pkgs))
-                              (_: _: {})
-                              [ tgtf depf hgf ghcidf ];
+      haskell = pkgs.haskell // {
+        packages = pkgs.haskell.packages // {
+          ${compiler} = pkgs.haskell.packages.${compiler}.override {
+            overrides = builtins.foldl'
+                                  (acc: f: pkgs.lib.composeExtensions acc (f pkgs))
+                                  (_: _: {})
+                                  [ tgtf depf hgf ghcidf ];
+          };
+        };
       };
     };
   };
@@ -37,5 +42,5 @@ let
 
 in
   if pkgs.lib.inNixShell
-    then pkgs.haskellPackages.${target}.env
-    else pkgs.haskellPackages.${target}
+    then pkgs.haskell.packages.${compiler}.${target}.env
+    else pkgs.haskell.packages.${compiler}.${target}
