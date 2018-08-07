@@ -101,7 +101,6 @@ printEncodingCmd vod user sutc eutc m3u8 = do
   let start = format4file sutc
       end   = format4file eutc
       ext   = "mp4" :: String
-      durationUTC = addUTCTime (diffUTCTime eutc sutc) (UTCTime { utctDay = toEnum 0, utctDayTime = toEnum 0 })
       mp4  = T.pack $ printf "%s_%s_%s_%s.%s" user vod start end ext
   printf "ts files download completed.\n"
-  printf "ffmpeg -t %s -i %s -c:v copy -c:a copy %s\n" (format4ffmpeg durationUTC) m3u8 mp4
+  printf "ffmpeg -i %s -c:v copy -c:a copy %s\n" m3u8 mp4
