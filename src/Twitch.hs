@@ -7,7 +7,6 @@
 module Twitch
   ( twitchAPI
   , getVideoInfo
-  , getVideoComment
   , getChatLogs
   , comment_message
   , comment_commenter
@@ -32,7 +31,6 @@ import           Data.Function             ((&))
 import           Data.Monoid               ((<>))
 import           GHC.Generics           (Generic)
 import           Control.Monad.Reader
--- import           Control.Monad.Reader.Class
 import           Data.Maybe (fromMaybe)
 import           Data.Time
 import           Parse (parseDuration)
@@ -156,8 +154,10 @@ data VideoInfo = VideoInfo
 
 
 data TwitchCfg = TwitchCfg
-  { twitchcfg_clientid :: !Text
-  , twitchcfg_endpoint :: !Text
+  { twitchcfg_url_v5   :: !Text
+  , twitchcfg_url_new  :: !Text
+  , twitchcfg_clientid :: !Text
+  , twitchcfg_chat_path :: !Text
   }
 
 
@@ -177,22 +177,22 @@ getVideoInfo _videoId = do
 twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchData a))
 twitchAPI apiKind idParam = do
   cfg <- ask
-  let apiUrl   = twitchcfg_endpoint cfg <> apiKind
-      clientId = twitchcfg_clientid cfg
-      url  :: String
-      url   = printf "%s?id=%s" apiUrl idParam
-      opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
+  let newApiUrl = twitchcfg_url_new cfg <> apiKind
+      clientId  = twitchcfg_clientid cfg
+      url       = printf "%s/?id=%s" newApiUrl idParam
+      opts      = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
   liftIO $ asJSON =<< getWith opts url
 
 
-getVideoComment :: (MonadIO m, MonadReader TwitchCfg m) => String -> Float -> m [Comment]
-getVideoComment _videoId offset = do
+chatLogOffset :: (MonadIO m, MonadReader TwitchCfg m) => String -> Float -> m [Comment]
+chatLogOffset vodId offset = do
   cfg <- ask
-  let clientId = twitchcfg_clientid cfg
-      url  :: String
-      url   = printf "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f" _videoId offset
-      opts  = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
-                       & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
+  let v5ApiUrl = twitchcfg_url_v5 cfg
+      clientId = twitchcfg_clientid cfg
+      chatPath = twitchcfg_chat_path cfg
+      url      = printf "%s/%s/%s=%f" v5ApiUrl vodId chatPath offset
+      opts     = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
+                          & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
   resp <- liftIO $ asJSON =<< getWith opts url
   return $ resp ^. responseBody . comment_data
 
@@ -208,10 +208,10 @@ getChatLogs vodId startUTC endUTC = do
     ssec = fromRational . toRational . utctDayTime $ startUTC
     esec = fromRational . toRational . utctDayTime $ endUTC
     getChatLogs' psec csec = do
-      comments <- getVideoComment vodId csec
-      let nsec = fromMaybe csec $ lastOf (traverse . comment_content_offset_seconds) comments
       liftIO $ printf "downloading chat comment from %f seconds\n" csec
-      restOfComments <- if csec == nsec || esec < nsec  then return [] else getChatLogs' csec nsec
+      comments <- chatLogOffset vodId csec
+      let nsec = fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds)
+      restOfComments <- if csec == nsec || esec < nsec then return [] else getChatLogs' csec nsec
       return $ comments ++ restOfComments
 
 

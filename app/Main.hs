@@ -33,7 +33,10 @@ main :: IO ()
 main =  do
   (CmdOpts vod start end chat) <- parseCmdOpts
   let (sutc, eutc) = parseRange start end
-  let cfg = TwitchCfg "https://api.twitch.tv/helix/" "g9r0psjr0nn0a4ypjh62b6p568jhom"
+  let cfg = TwitchCfg "https://api.twitch.tv/v5/videos" -- v5 api endpoint
+                      "https://api.twitch.tv/helix"     -- new api endpoint
+                      "g9r0psjr0nn0a4ypjh62b6p568jhom"  -- cliendId
+                      "comments?content_offset_seconds" -- chat log path
 
   (VideoInfo url user) <- getVodInfo vod cfg
 
