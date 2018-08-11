@@ -199,7 +199,15 @@ chatLogOffset vodId offset = do
 
 getChatLogs :: (MonadIO m, MonadReader TwitchCfg m) => String -> UTCTime -> UTCTime -> m [(Text, Text, Text)]
 getChatLogs vodId startUTC endUTC = do
-  comments <- getChatLogs' ssec ssec
+  comments <- untilM
+    -- initial value for monadic function
+    ssec
+    -- predicate for termination
+    (\csec -> \nsec -> nsec == csec || nsec > esec)
+    -- next value for monadic function using previous result
+    (\csec -> \comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
+    -- actual monadic function
+    (\csec -> (liftIO $ printf "downloading chat comment from %f seconds\n" csec) >> chatLogOffset vodId csec)
   let time = Getter $ comment_created_at
       name = Getter $ comment_commenter . commenter_display_name
       mesg = Getter $ comment_message . message_body
@@ -207,12 +215,12 @@ getChatLogs vodId startUTC endUTC = do
   where
     ssec = fromRational . toRational . utctDayTime $ startUTC
     esec = fromRational . toRational . utctDayTime $ endUTC
-    getChatLogs' psec csec = do
-      liftIO $ printf "downloading chat comment from %f seconds\n" csec
-      comments <- chatLogOffset vodId csec
-      let nsec = fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds)
-      restOfComments <- if csec == nsec || esec < nsec then return [] else getChatLogs' csec nsec
-      return $ comments ++ restOfComments
+    untilM :: (MonadIO m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
+    untilM a pred next mf = do
+      c <- mf a
+      let a' = next a c
+      cs <- if pred a a' then return mempty else mf a'
+      return $ mappend cs c
 
 
 extractBaseUrl :: Text -> Text
