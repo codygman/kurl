@@ -177,9 +177,9 @@ getVideoInfo _videoId = do
 twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchData a))
 twitchAPI apiKind idParam = do
   cfg <- ask
-  let newApiUrl = twitchcfg_url_new cfg <> apiKind
+  let newApiUrl = twitchcfg_url_new cfg
       clientId  = twitchcfg_clientid cfg
-      url       = printf "%s/?id=%s" newApiUrl idParam
+      url       = printf "%s/%s/?id=%s" newApiUrl apiKind idParam
       opts      = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
   liftIO $ asJSON =<< getWith opts url
 
