@@ -22,29 +22,36 @@ import           Data.Char
 
 
 data CmdOpts = CmdOpts
-  { vodId  :: String
-  , start  :: String
-  , end    :: String
-  , chat   :: Bool
+  { vodId   :: String
+  , start   :: String
+  , end     :: String
+  , chat    :: Bool
+  , noVideo :: Bool
   }
 
 
 main :: IO ()
 main =  do
-  (CmdOpts vod start end chat) <- parseCmdOpts
+  (CmdOpts vod start end chat noVideo) <- parseCmdOpts
   let (sutc, eutc) = parseRange start end
   let cfg = TwitchCfg "https://api.twitch.tv/v5/videos" -- v5 api endpoint
                       "https://api.twitch.tv/helix"     -- new api endpoint
                       "g9r0psjr0nn0a4ypjh62b6p568jhom"  -- cliendId
                       "comments?content_offset_seconds" -- chat log path
 
-  (VideoInfo url user) <- getVodInfo vod cfg
+  let vodId = parseVodUrl vod
 
-  downloadChat vod user sutc eutc chat cfg
+  (VideoInfo url user) <- getVodInfo vodId cfg
 
-  let m3u8 = "index-dvr.m3u8"
-  downloadVod vod url sutc eutc m3u8
-  printEncodingCmd vod user sutc eutc m3u8
+  downloadChat vodId user sutc eutc chat cfg
+
+  if noVideo
+    then do
+      printf "Skip download video\n"
+    else do
+      let m3u8 = "index-dvr.m3u8"
+      downloadVod vodId url sutc eutc m3u8
+      printEncodingCmd vodId user sutc eutc m3u8
 
 
 
@@ -53,10 +60,11 @@ parseCmdOpts = execParser $ info
   ( cmd <**> helper ) ( fullDesc <> progDesc "Download twitch vod TARGET" <> header "kurl - a twitch vod downloader" )
   where
     cmd = CmdOpts
-      <$> strArgument ( metavar "URL" <> help "twitch vod URL ex) https://www.twitch.tv/videos/012345678" )
-      <*> strOption   ( long "start"  <> short 's' <> help "recording start offset" )
-      <*> strOption   ( long "end"    <> short 'e' <> help "recording end offset" )
-      <*> switch      ( long "chat"   <> short 'c' <> help "download vod chat log" )
+      <$> strArgument ( metavar "URL"   <> help "twitch vod URL ex) https://www.twitch.tv/videos/012345678" )
+      <*> strOption   ( long "start"    <> short 's' <> help "recording start offset" )
+      <*> strOption   ( long "end"      <> short 'e' <> help "recording end offset" )
+      <*> switch      ( long "chat"     <> short 'c' <> help "download vod chat log" )
+      <*> switch      ( long "no-video" <> short 'n' <> help "download vod chat log" )
 
 
 parseRange :: String -> String -> (UTCTime, UTCTime)
@@ -71,18 +79,18 @@ getVodInfo vodId cfg = runReaderT (getVideoInfo vodId) cfg
 
 
 downloadChat :: String -> T.Text -> UTCTime -> UTCTime -> Bool -> TwitchCfg -> IO ()
-downloadChat vod user sutc eutc chat cfg =
+downloadChat vodId user sutc eutc chat cfg =
     if chat then do
-      printf "start downloading all comments of vod: %s ...\n"  vod
-      logs <- runReaderT (getChatLogs vod sutc eutc) cfg
-      writeComments vod user logs
+      printf "start downloading all comments of vod: %s ...\n"  vodId
+      logs <- runReaderT (getChatLogs vodId sutc eutc) cfg
+      writeComments vodId user logs
     else
       return ()
 
 
 downloadVod :: String -> T.Text -> UTCTime -> UTCTime -> T.Text -> IO ()
-downloadVod vod url sutc eutc m3u8 = do
-  printf "start downloading ts files of vod: %s ...\n" vod
+downloadVod vodId url sutc eutc m3u8 = do
+  printf "start downloading ts files of vod: %s ...\n" vodId
   printf "vod base url => %s\n" url
   let startTime = format4file sutc
       endTime   = format4file eutc
@@ -100,10 +108,10 @@ downloadVod vod url sutc eutc m3u8 = do
 
 
 printEncodingCmd :: String -> T.Text -> UTCTime -> UTCTime -> T.Text -> IO ()
-printEncodingCmd vod user sutc eutc m3u8 = do
+printEncodingCmd vodId user sutc eutc m3u8 = do
   let start = format4file sutc
       end   = format4file eutc
       ext   = "mp4" :: String
-      mp4  = T.pack $ printf "%s_%s_%s_%s.%s" user vod start end ext
+      mp4  = T.pack $ printf "%s_%s_%s_%s.%s" user vodId start end ext
   printf "ts files download completed.\n"
   printf "ffmpeg -i %s -c:v copy -c:a copy %s\n" m3u8 mp4
