@@ -119,5 +119,6 @@ printEncodingCmd vodId user sutc eutc m3u8 = do
   let duration = format4ffmpeg $ addUTCTime (diffUTCTime eutc sutc) (UTCTime (toEnum 0) (toEnum 0))
       ext   = "mp4" :: String
       mp4  = T.pack $ printf "%s_%s_%s_%s.%s" user vodId (format4file sutc) (format4file eutc) ext
-  printf "ts files download completed.\n"
-  printf "ffmpeg -ss %s -t %s -i %s -c:v copy -c:a copy %s\n" (format4ffmpeg sutc) duration m3u8 mp4
+      formatStr = T.unpack $ T.intercalate " \\\n" ["ffmpeg","-ss %s", "-t %s", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
+  printf "Encoding command with ffmpeg.\n"
+  printf formatStr (format4ffmpeg sutc) duration m3u8 mp4
