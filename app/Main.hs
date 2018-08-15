@@ -44,7 +44,9 @@ main =  do
 
   (VideoInfo url user) <- getVodInfo vodId cfg
 
-  downloadChat vodId user sutc eutc chat cfg
+  if chat
+    then downloadChat vodId user sutc eutc chat cfg
+    else return ()
 
   let m3u8 = "index-dvr.m3u8"
 

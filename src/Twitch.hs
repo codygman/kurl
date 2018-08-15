@@ -168,6 +168,7 @@ getVideoInfo _videoId = do
       userId     = twitchData ^?! traverse . video_user_id
       baseUrl    = twitchData ^?! traverse . video_thumbnail_url . to extractBaseUrl
   usersResp <- twitchAPI "users" userId
+
   let username =  usersResp ^. responseBody . twitch_data ^?! traverse . user_display_name
   return $ VideoInfo { videoinfo_baseUrl         = baseUrl
                      , videoinfo_userDisplayName = username
@@ -177,6 +178,7 @@ getVideoInfo _videoId = do
 twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchData a))
 twitchAPI apiKind idParam = do
   cfg <- ask
+
   let newApiUrl = twitchcfg_url_new cfg
       clientId  = twitchcfg_clientid cfg
       url       = printf "%s/%s/?id=%s" newApiUrl apiKind idParam
