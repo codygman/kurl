@@ -12,7 +12,7 @@ import qualified Data.Text              as T
 
 import           Parse                  (getStartIdx, getEndIdx, parseDuration, parseVodUrl, format4file, format4ffmpeg)
 import           Twitch                 (getVideoInfo, getChatLogs, TwitchCfg(..), VideoInfo(..))
-import           TsIO                   (processM3U8, processTS, writeComments)
+import           TsIO                   (processM3U8, processTS, writeComments, makeDnUrl)
 import           Control.Monad.Reader   (runReaderT, guard)
 import           Data.Maybe
 import           Data.Time
@@ -26,13 +26,14 @@ data CmdOpts = CmdOpts
   , start   :: String
   , end     :: String
   , chat    :: Bool
-  , noVideo :: Bool
+  , ts      :: Bool
+  , ffmpeg  :: Bool
   }
 
 
 main :: IO ()
 main =  do
-  (CmdOpts vod start end chat noVideo) <- parseCmdOpts
+  (CmdOpts vod start end chat ts ffmpeg) <- parseCmdOpts
   let (sutc, eutc) = parseRange start end
   let cfg = TwitchCfg "https://api.twitch.tv/v5/videos" -- v5 api endpoint
                       "https://api.twitch.tv/helix"     -- new api endpoint
@@ -45,13 +46,18 @@ main =  do
 
   downloadChat vodId user sutc eutc chat cfg
 
-  if noVideo
+  let m3u8 = "index-dvr.m3u8"
+
+  if ffmpeg
     then do
-      printf "Skip download video\n"
-    else do
-      let m3u8 = "index-dvr.m3u8"
+      printEncodingCmd vodId user sutc eutc (makeDnUrl url m3u8)
+    else return ()
+
+  if ts
+    then do
       downloadVod vodId url sutc eutc m3u8
-      printEncodingCmd vodId user sutc eutc m3u8
+      -- printEncodingCmd vodId user sutc eutc m3u8
+    else return ()
 
 
 
@@ -64,7 +70,8 @@ parseCmdOpts = execParser $ info
       <*> strOption   ( long "start"    <> short 's' <> help "recording start offset" )
       <*> strOption   ( long "end"      <> short 'e' <> help "recording end offset" )
       <*> switch      ( long "chat"     <> short 'c' <> help "download vod chat log" )
-      <*> switch      ( long "no-video" <> short 'n' <> help "download vod chat log" )
+      <*> switch      ( long "ts"       <> short 't' <> help "download ts files of the vod" )
+      <*> switch      ( long "ffmpeg"   <> short 'f' <> help "print ffmpeg commnd for downloading vod" )
 
 
 parseRange :: String -> String -> (UTCTime, UTCTime)
@@ -109,9 +116,8 @@ downloadVod vodId url sutc eutc m3u8 = do
 
 printEncodingCmd :: String -> T.Text -> UTCTime -> UTCTime -> T.Text -> IO ()
 printEncodingCmd vodId user sutc eutc m3u8 = do
-  let start = format4file sutc
-      end   = format4file eutc
+  let duration = format4ffmpeg $ addUTCTime (diffUTCTime eutc sutc) (UTCTime (toEnum 0) (toEnum 0))
       ext   = "mp4" :: String
-      mp4  = T.pack $ printf "%s_%s_%s_%s.%s" user vodId start end ext
+      mp4  = T.pack $ printf "%s_%s_%s_%s.%s" user vodId (format4file sutc) (format4file eutc) ext
   printf "ts files download completed.\n"
-  printf "ffmpeg -i %s -c:v copy -c:a copy %s\n" m3u8 mp4
+  printf "ffmpeg -ss %s -t %s -i %s -c:v copy -c:a copy %s\n" (format4ffmpeg sutc) duration m3u8 mp4

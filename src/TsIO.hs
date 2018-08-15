@@ -4,6 +4,7 @@
 module TsIO
   ( processM3U8
   , processTS
+  , makeDnUrl
   , writeComments
   ) where
 
