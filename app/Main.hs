@@ -27,13 +27,12 @@ data CmdOpts = CmdOpts
   , end     :: String
   , chat    :: Bool
   , ts      :: Bool
-  , ffmpeg  :: Bool
   }
 
 
 main :: IO ()
 main =  do
-  (CmdOpts vod start end chat ts ffmpeg) <- parseCmdOpts
+  (CmdOpts vod start end chat ts) <- parseCmdOpts
   let (sutc, eutc) = parseRange start end
   let cfg = TwitchCfg "https://api.twitch.tv/v5/videos" -- v5 api endpoint
                       "https://api.twitch.tv/helix"     -- new api endpoint
@@ -50,17 +49,12 @@ main =  do
 
   let m3u8 = "index-dvr.m3u8"
 
-  if ffmpeg
-    then do
-      printEncodingCmd vodId user sutc eutc (makeDnUrl url m3u8)
-    else return ()
+  printEncodingCmd vodId user sutc eutc (makeDnUrl url m3u8)
 
   if ts
     then do
       downloadVod vodId url sutc eutc m3u8
-      -- printEncodingCmd vodId user sutc eutc m3u8
     else return ()
-
 
 
 parseCmdOpts :: IO CmdOpts
@@ -73,7 +67,6 @@ parseCmdOpts = execParser $ info
       <*> strOption   ( long "end"      <> short 'e' <> help "recording end offset" )
       <*> switch      ( long "chat"     <> short 'c' <> help "download vod chat log" )
       <*> switch      ( long "ts"       <> short 't' <> help "download ts files of the vod" )
-      <*> switch      ( long "ffmpeg"   <> short 'f' <> help "print ffmpeg commnd for downloading vod" )
 
 
 parseRange :: String -> String -> (UTCTime, UTCTime)
