@@ -80,16 +80,16 @@ newtype CommentData = CommentData
 data Comment = Comment
   { _comment__id                    :: !Text
   , _comment_created_at             :: !Text
-  , _comment_updated_at             :: !Text
-  , _comment_channel_id             :: !Text
-  , _comment_content_type           :: !Text
-  , _comment_content_id             :: !Text
+  , _comment_updated_at             :: Text
+  , _comment_channel_id             :: Text
+  , _comment_content_type           :: Text
+  , _comment_content_id             :: Text
   , _comment_content_offset_seconds :: !Float
   , _comment_commenter              :: !Commenter
-  , _comment_source                 :: !Text
-  , _comment_state                  :: !Text
+  , _comment_source                 :: Text
+  , _comment_state                  :: Text
   , _comment_message                :: !Message
-  , _comment_more_replies           :: !Bool
+  , _comment_more_replies           :: Bool
   } deriving (Show, Generic)
 
 
@@ -97,10 +97,10 @@ data Commenter = Commenter
   { _commenter_display_name :: !Text
   , _commenter__id          :: !Text
   , _commenter_name         :: !Text
-  , _commenter_type         :: !Text
+  , _commenter_type         :: Text
   , _commenter_bio          :: Maybe Text
-  , _commenter_created_at   :: !Text
-  , _commenter_updated_at   :: !Text
+  , _commenter_created_at   :: Text
+  , _commenter_updated_at   :: Text
   , _commenter_logo         :: Maybe Text
   } deriving (Show, Generic)
 
@@ -108,7 +108,7 @@ data Commenter = Commenter
 data Message = Message
   { _message_body        :: !Text
   , _message_fragments   :: [Fragment]
-  , _message_is_action   :: !Bool
+  , _message_is_action   :: Bool
   , _message_user_badges :: Maybe [UserBadge]
   , _message_user_color  :: Maybe Text
   } deriving (Show, Generic)
@@ -120,8 +120,8 @@ newtype Fragment = Fragment
 
 
 data UserBadge = UserBadge
-  { _userbadge__id     :: !Text
-  , _userbadge_version :: !Text
+  { _userbadge__id     :: Text
+  , _userbadge_version :: Text
   } deriving (Show, Generic)
 
 
@@ -136,6 +136,7 @@ deriveJSON defaultOptions { fieldLabelModifier = drop (length "_fragment_")  } '
 deriveJSON defaultOptions { fieldLabelModifier = drop (length "_userbadge_") } ''UserBadge
 
 
+
 makeLenses ''TwitchData
 makeLenses ''Video
 makeLenses ''User
@@ -148,16 +149,16 @@ makeLenses ''UserBadge
 
 
 data VideoInfo = VideoInfo
-  { videoinfo_baseUrl :: Text
+  { videoinfo_baseUrl         :: Text
   , videoinfo_userDisplayName :: Text
   } deriving (Show)
 
 
 data TwitchCfg = TwitchCfg
-  { twitchcfg_url_v5   :: !Text
-  , twitchcfg_url_new  :: !Text
-  , twitchcfg_clientid :: !Text
-  , twitchcfg_chat_path :: !Text
+  { twitchcfg_url_v5    :: Text
+  , twitchcfg_url_new   :: Text
+  , twitchcfg_clientid  :: Text
+  , twitchcfg_chat_path :: Text
   }
 
 
