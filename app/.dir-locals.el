@@ -1,3 +1,3 @@
 (
- (nil . ((dante-target . "exe:kurl")))
+ (haskell-mode . ((dante-target . "exe:kurl")))
  )
