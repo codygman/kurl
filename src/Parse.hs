@@ -50,15 +50,17 @@ getIdx pred duration m3u8 =
   in  length $ takeWhile (pred nominalDuration)cumulation
 
 
-parseDuration :: String -> Maybe UTCTime
-parseDuration x = parseRangeTime "%-Hh%-Mm%-Ss"
-    <|> parseRangeTime "%-Mm%-Ss"
-    <|> parseRangeTime "%-Hh%-Mm"
-    <|> parseRangeTime "%-Hh"
-    <|> parseRangeTime "%-Mm"
-    <|> parseRangeTime "%-Ss"
+parseDuration :: Maybe String -> Maybe UTCTime
+parseDuration mx = case mx of
+  Nothing -> Nothing
+  Just x ->  parseRangeTime "%-Hh%-Mm%-Ss" x
+              <|> parseRangeTime "%-Mm%-Ss" x
+              <|> parseRangeTime "%-Hh%-Mm" x
+              <|> parseRangeTime "%-Hh" x
+              <|> parseRangeTime "%-Mm" x
+              <|> parseRangeTime "%-Ss" x
   where
-    parseRangeTime timeFormat = parseTimeM True defaultTimeLocale timeFormat x
+    parseRangeTime timeFormat x = parseTimeM True defaultTimeLocale timeFormat x
 
 
 format4file :: FormatTime t => t -> String

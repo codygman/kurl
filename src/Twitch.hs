@@ -151,6 +151,7 @@ makeLenses ''UserBadge
 data VideoInfo = VideoInfo
   { videoinfo_baseUrl         :: Text
   , videoinfo_userDisplayName :: Text
+  , videoinfo_duration        :: Text
   } deriving (Show)
 
 
@@ -168,11 +169,13 @@ getVideoInfo _videoId = do
   let twitchData = videoResp ^. responseBody . twitch_data
       userId     = twitchData ^?! traverse . video_user_id
       baseUrl    = twitchData ^?! traverse . video_thumbnail_url . to extractBaseUrl
+      duration   = twitchData ^?! traverse . video_duration
   usersResp <- twitchAPI "users" userId
 
   let username =  usersResp ^. responseBody . twitch_data ^?! traverse . user_display_name
   return $ VideoInfo { videoinfo_baseUrl         = baseUrl
                      , videoinfo_userDisplayName = username
+                     , videoinfo_duration        = duration
                      }
 
 

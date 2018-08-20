@@ -23,8 +23,8 @@ import           Data.Char
 
 data CmdOpts = CmdOpts
   { vodId   :: String
-  , start   :: String
-  , end     :: String
+  , start   :: Maybe String
+  , end     :: Maybe String
   , chat    :: Bool
   , ts      :: Bool
   }
@@ -32,16 +32,20 @@ data CmdOpts = CmdOpts
 
 main :: IO ()
 main =  do
-  (CmdOpts vod start end chat ts) <- parseCmdOpts
-  let (sutc, eutc) = parseRange start end
   let cfg = TwitchCfg "https://api.twitch.tv/v5/videos" -- v5 api endpoint
                       "https://api.twitch.tv/helix"     -- new api endpoint
                       "g9r0psjr0nn0a4ypjh62b6p568jhom"  -- cliendId
                       "comments?content_offset_seconds" -- chat log path
 
+  (CmdOpts vod start end chat ts) <- parseCmdOpts
+
   let vodId = parseVodUrl vod
 
-  (VideoInfo url user) <- getVodInfo vodId cfg
+  (VideoInfo url user duration) <- getVodInfo vodId cfg
+
+  let defaultStart    = "0s"
+      defaultDuration = duration
+      (sutc, eutc)    = parseRange start end defaultStart defaultDuration
 
   if chat
     then downloadChat vodId user sutc eutc chat cfg
@@ -63,17 +67,17 @@ parseCmdOpts = execParser $ info
   where
     cmd = CmdOpts
       <$> strArgument ( metavar "URL"   <> help "twitch vod URL ex) https://www.twitch.tv/videos/012345678" )
-      <*> strOption   ( long "start"    <> short 's' <> help "recording start offset" )
-      <*> strOption   ( long "end"      <> short 'e' <> help "recording end offset" )
-      <*> switch      ( long "chat"     <> short 'c' <> help "download vod chat log" )
-      <*> switch      ( long "ts"       <> short 't' <> help "download ts files of the vod" )
+      <*> optional (strOption   ( long "start"    <> short 's' <> help "recording start offset" ))
+      <*> optional (strOption   ( long "end"      <> short 'e' <> help "recording end offset" ))
+      <*> switch                ( long "chat"     <> short 'c' <> help "download vod chat log" )
+      <*> switch                ( long "ts"       <> short 't' <> help "download ts files of the vod" )
 
 
-parseRange :: String -> String -> (UTCTime, UTCTime)
-parseRange s e =
-  case ((,) <$> parseDuration s <*> parseDuration e) of
-    Just (sutc, eutc) -> (sutc, eutc)
-    _ -> error "start end time option error time format should be: <0h0m0s|0h0m|0m0s|0h|0m|0s>"
+parseRange :: Maybe String -> Maybe String -> T.Text -> T.Text -> (UTCTime, UTCTime)
+parseRange s e defaultS defaultD =
+  let sutc = parseDuration s <|> parseDuration (Just . T.unpack $ defaultS)
+      eutc = parseDuration e <|> parseDuration (Just . T.unpack $ defaultD)
+  in (fromJust sutc, fromJust eutc)
 
 
 getVodInfo :: String -> TwitchCfg -> IO VideoInfo
