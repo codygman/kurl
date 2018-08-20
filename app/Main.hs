@@ -4,6 +4,7 @@
 module Main where
 
 import           System.Environment     (getArgs)
+import           System.Info            (os)
 import           Text.Printf            (printf)
 
 import           Streamly
@@ -115,9 +116,10 @@ downloadVod vodId url sutc eutc m3u8 = do
 
 printEncodingCmd :: String -> T.Text -> UTCTime -> UTCTime -> T.Text -> IO ()
 printEncodingCmd vodId user sutc eutc m3u8 = do
-  let duration = format4ffmpeg $ addUTCTime (diffUTCTime eutc sutc) (UTCTime (toEnum 0) (toEnum 0))
-      ext   = "mp4" :: String
-      mp4  = T.pack $ printf "%s_%s_%s_%s.%s" user vodId (format4file sutc) (format4file eutc) ext
-      formatStr = T.unpack $ T.intercalate " \\\n" ["ffmpeg","-ss %s", "-t %s", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
+  let duration  = format4ffmpeg $ addUTCTime (diffUTCTime eutc sutc) (UTCTime (toEnum 0) (toEnum 0))
+      ext       = "mp4" :: String
+      mp4       = T.pack $ printf "%s_%s_%s_%s.%s" user vodId (format4file sutc) (format4file eutc) ext
+      delim     = if os == "mingw32" || os == "mingw64" then " ^\n" else " \\\n"
+      formatStr = T.unpack $ T.intercalate delim ["ffmpeg","-ss %s", "-t %s", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
   printf "Encoding command with ffmpeg.\n"
   printf formatStr (format4ffmpeg sutc) duration m3u8 mp4
