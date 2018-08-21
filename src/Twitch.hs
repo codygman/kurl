@@ -185,7 +185,7 @@ twitchAPI apiKind idParam = do
 
   let newApiUrl = twitchcfg_url_new cfg
       clientId  = twitchcfg_clientid cfg
-      url       = printf "%s/%s/?id=%s" newApiUrl apiKind idParam
+      url       = printf "%s/%s?id=%s" newApiUrl apiKind idParam
       opts      = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
   liftIO $ asJSON =<< getWith opts url
 
