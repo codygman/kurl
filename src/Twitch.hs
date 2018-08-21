@@ -16,9 +16,9 @@ module Twitch
   ) where
 
 
-import           Prelude                hiding (length)
 import           Data.Text              hiding (drop)
-import           Data.Text.Encoding        (encodeUtf8, decodeUtf8)
+import           Data.Text              as T   (unpack, intercalate, length)
+import           Data.Text.Encoding            (encodeUtf8, decodeUtf8)
 import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Aeson.Lens
@@ -125,15 +125,15 @@ data UserBadge = UserBadge
   } deriving (Show, Generic)
 
 
-deriveJSON defaultOptions { fieldLabelModifier = const "data"                } ''TwitchData
-deriveJSON defaultOptions { fieldLabelModifier = const "comments"            } ''CommentData
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "_video_")     } ''Video
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "_user_")      } ''User
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "_comment_")   } ''Comment
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "_commenter_") } ''Commenter
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "_message_")   } ''Message
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "_fragment_")  } ''Fragment
-deriveJSON defaultOptions { fieldLabelModifier = drop (length "_userbadge_") } ''UserBadge
+deriveJSON defaultOptions { fieldLabelModifier = const "data"                  } ''TwitchData
+deriveJSON defaultOptions { fieldLabelModifier = const "comments"              } ''CommentData
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_video_")     } ''Video
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_user_")      } ''User
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_comment_")   } ''Comment
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_commenter_") } ''Commenter
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_message_")   } ''Message
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_fragment_")  } ''Fragment
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_userbadge_") } ''UserBadge
 
 
 
@@ -177,6 +177,17 @@ getVideoInfo _videoId = do
                      , videoinfo_userDisplayName = username
                      , videoinfo_duration        = duration
                      }
+  where
+    -- TODO: More reliable parsing of base url
+    extractBaseUrl url = let pathSplit = split (== '/' ) url
+                         in if Prelude.length pathSplit < 4
+                            then error (T.unpack errMsg)
+                            else pathSplit !! 4
+    errMsg = T.intercalate " \n" [ " Base url extraction from thumbnailurl."
+                                 , " This vod maybe is the recording of ongoing live stream."
+                                 , " This is not a regular vod. Downloading is not supported."
+                                 , " Abort program."
+                                 ]
 
 
 twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchData a))
@@ -227,7 +238,3 @@ getChatLogs vodId startUTC endUTC = do
       let a' = next a c
       cs <- if pred a a' then return mempty else mf a'
       return $ mappend cs c
-
-
-extractBaseUrl :: Text -> Text
-extractBaseUrl url = split (== '/' ) url !! 4
