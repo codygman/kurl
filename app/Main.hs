@@ -53,8 +53,9 @@ main =  do
     else return ()
 
   let m3u8 = "index-dvr.m3u8"
+  let fullm3u8 = makeDnUrl url m3u8
 
-  printEncodingCmd vodId user sutc eutc (makeDnUrl url m3u8)
+  printEncodingCmd vodId user sutc eutc fullm3u8
 
   if ts
     then do
@@ -120,6 +121,7 @@ printEncodingCmd vodId user sutc eutc m3u8 = do
       ext       = "mp4" :: String
       mp4       = T.pack $ printf "%s_%s_%s_%s.%s" user vodId (format4file sutc) (format4file eutc) ext
       delim     = if os == "mingw32" || os == "mingw64" then " ^\n" else " \\\n"
-      formatStr = T.unpack $ T.intercalate delim ["ffmpeg","-ss %s", "-t %s", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
+      formatStr = T.unpack $ T.intercalate delim ["ffmpeg", "-ss %s", "-t %s", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
   printf "Encoding command with ffmpeg.\n"
+  printf $ (format4ffmpeg sutc)
   printf formatStr (format4ffmpeg sutc) duration m3u8 mp4
