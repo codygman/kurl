@@ -10,30 +10,37 @@ module Twitch
   , getChatLogs
   , comment_message
   , comment_commenter
+  , getAccessToken
+  , getM3u8
+  , getStreamUrls
   , VideoInfo(..)
   , Comment(..)
   , TwitchCfg(..)
+  , StreamType(..)
   ) where
 
 
-import           Data.Text              hiding (drop)
-import           Data.Text              as T   (unpack, intercalate, length)
-import           Data.Text.Encoding            (encodeUtf8, decodeUtf8)
+import           Data.Text                 hiding (drop)
+import           Data.Text                 as T   (unpack, intercalate, length)
+import           Data.Text.Encoding        as E  (encodeUtf8, decodeUtf8)
+-- import           Data.Text.Lazy.Encoding  as LE (encodeUtf8, decodeUtf8)
 import           Data.Aeson
 import           Data.Aeson.TH
 import           Data.Aeson.Lens
-import qualified Data.ByteString.Char8  as CB
-import qualified Data.ByteString.Lazy   as LB
+import qualified Data.ByteString.Char8      as CB
+import qualified Data.ByteString.Lazy.Char8 as LB (unpack)
 import           Network.Wreq
 import           Text.Printf
 import           Control.Lens
-import           Data.Function             ((&))
-import           Data.Monoid               ((<>))
-import           GHC.Generics           (Generic)
+import           Data.Function            ((&))
+import           Data.Monoid              ((<>))
+import           GHC.Generics             (Generic)
 import           Control.Monad.Reader
 import           Data.Maybe (fromMaybe)
 import           Data.Time
+import           System.Random            (getStdRandom, randomR)
 import           Parse (parseDuration)
+import           M3u8 (StreamInfo, parseM3u8)
 
 
 newtype TwitchData a = TwitchData
@@ -125,6 +132,12 @@ data UserBadge = UserBadge
   } deriving (Show, Generic)
 
 
+data AccessToken = AccessToken
+  { _accesstoken_sig   :: Text
+  , _accesstoken_token :: Text
+  } deriving (Show, Generic)
+
+
 deriveJSON defaultOptions { fieldLabelModifier = const "data"                  } ''TwitchData
 deriveJSON defaultOptions { fieldLabelModifier = const "comments"              } ''CommentData
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_video_")     } ''Video
@@ -134,6 +147,7 @@ deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_commenter_") }
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_message_")   } ''Message
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_fragment_")  } ''Fragment
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_userbadge_") } ''UserBadge
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_accesstoken_") } ''AccessToken
 
 
 
@@ -146,6 +160,7 @@ makeLenses ''Commenter
 makeLenses ''Message
 makeLenses ''Fragment
 makeLenses ''UserBadge
+makeLenses ''AccessToken
 
 
 data VideoInfo = VideoInfo
@@ -163,9 +178,12 @@ data TwitchCfg = TwitchCfg
   }
 
 
+data StreamType = Live | Archive
+
+
 getVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> m VideoInfo
 getVideoInfo _videoId = do
-  videoResp <- twitchAPI "videos" (decodeUtf8 . CB.pack $ _videoId)
+  videoResp <- twitchAPI "videos" (E.decodeUtf8 . CB.pack $ _videoId)
   let twitchData = videoResp ^. responseBody . twitch_data
       userId     = twitchData ^?! traverse . video_user_id
       baseUrl    = twitchData ^?! traverse . video_thumbnail_url . to extractBaseUrl
@@ -197,8 +215,65 @@ twitchAPI apiKind idParam = do
   let newApiUrl = twitchcfg_url_new cfg
       clientId  = twitchcfg_clientid cfg
       url       = printf "%s/%s?id=%s" newApiUrl apiKind idParam
-      opts      = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
+      opts      = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
   liftIO $ asJSON =<< getWith opts url
+
+
+-- Archive VOD
+-- https://api.twitch.tv/api/vods/<vod_id>/access_token
+-- https://usher.ttvnw.net/vod/<vod_id>.m3u8?<queryparams>
+-- Live VOD
+-- https://api.twitch.tv/api/channels/<login_user>/access_token
+-- https://usher.ttvnw.net/api/channel/hls/<login_user>.m3u8?<queryparams>
+
+getStreamUrls :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> m [StreamInfo]
+getStreamUrls streamType loginUserOrVodId = do
+  accessToken <- getAccessToken streamType loginUserOrVodId
+  m3u8 <- getM3u8 streamType loginUserOrVodId accessToken
+  return $ parseM3u8 m3u8
+
+
+getM3u8 :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> AccessToken -> m String
+getM3u8 streamType loginUserOrVodId accessToken = do
+  cfg <- ask
+  r <- liftIO $ getStdRandom (randomR (1, 99999 :: Int))
+  let clientId = twitchcfg_clientid cfg
+      token = accessToken ^. accesstoken_token
+      sig   = accessToken ^. accesstoken_sig
+      m3u8Url   = printf m3u8Fmt loginUserOrVodId
+      randomInt = printf "%d" r :: String
+      m3u8Opts  = defaults & header "Client-ID"        .~ [ E.encodeUtf8 clientId ]
+                           & param  "player"           .~ [ "twitchweb"           ]
+                           & param  "token"            .~ [ token                 ]
+                           & param  "sig"              .~ [ sig                   ]
+                           & param  "allow_audio_only" .~ [ "true"                ]
+                           & param  "allow_source"     .~ [ "true"                ]
+                           & param  "type"             .~ [ "any"                 ]
+                           & param  "p"                .~ [ pack randomInt        ]
+  resp <- liftIO $ getWith m3u8Opts m3u8Url
+  return $ resp ^. responseBody . to LB.unpack
+  where
+    archFmt = "https://usher.ttvnw.net/vod/%s.m3u8"
+    liveFmt = "https://usher.ttvnw.net/api/channel/hls/%s.m3u8"
+    m3u8Fmt = case streamType of
+                Live    -> liveFmt
+                Archive -> archFmt
+
+
+getAccessToken :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> m AccessToken
+getAccessToken streamType loginUserOrVodId = do
+  cfg <- ask
+  let clientId = twitchcfg_clientid cfg
+      tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+      tokenUrl  = printf tokenFmt loginUserOrVodId
+  resp <- liftIO $ asJSON =<< getWith tokenOpts tokenUrl
+  return $ resp ^. responseBody
+  where
+    archFmt  = "https://api.twitch.tv/api/vods/%s/access_token"
+    liveFmt  = "https://api.twitch.tv/api/channels/%s/access_token"
+    tokenFmt = case streamType of
+                 Live    -> liveFmt
+                 Archive -> archFmt
 
 
 chatLogOffset :: (MonadIO m, MonadReader TwitchCfg m) => String -> Float -> m [Comment]
@@ -208,7 +283,7 @@ chatLogOffset vodId offset = do
       clientId = twitchcfg_clientid cfg
       chatPath = twitchcfg_chat_path cfg
       url      = printf "%s/%s/%s=%f" v5ApiUrl vodId chatPath offset
-      opts     = defaults & header "Client-ID" .~ [ encodeUtf8 clientId ]
+      opts     = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
                           & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
   resp <- liftIO $ asJSON =<< getWith opts url
   return $ resp ^. responseBody . comment_data
