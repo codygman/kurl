@@ -10,15 +10,19 @@ module Parse
   , parseVodUrl
   , format4file
   , format4ffmpeg
+  , formatUtc
+  , makeOffset
   ) where
 
 
 import Data.List
-import Data.List.Split
+import Data.List.Split hiding (sepBy, oneOf)
 import Data.Time
 import Data.Maybe
-import Data.Time.Format
+import Data.Time
+import Text.Printf
 import Control.Applicative
+import Text.ParserCombinators.Parsec hiding ((<|>))
 
 
 filterTime :: [String] -> [String]
@@ -28,24 +32,26 @@ filterTime lines =
 
 
 getTime :: String -> NominalDiffTime
-getTime line =
-  case parseTimeM True defaultTimeLocale "#EXTINF:%-S%-Q," line :: Maybe UTCTime of
-    Just x  -> toEnum . fromEnum . utctDayTime $ x
-    Nothing -> error "EXFINF parse error"
+getTime line = case parse offsetParser "" line of
+                 Left e -> error ("EXFINF parse error --> " <> show e)
+                 Right floatNum -> fromRational . toRational $ ((floatNum :: Float) * 10^12)
+  where
+    offsetParser = do
+      string "#EXTINF:"
+      read <$> many1 (digit <|> char '.')
 
 
-getStartIdx :: UTCTime -> String -> Int
+getStartIdx :: NominalDiffTime -> String -> Int
 getStartIdx duration m3u8 = getIdx (>=) duration m3u8
 
 
-getEndIdx :: UTCTime -> String -> Int
+getEndIdx :: NominalDiffTime -> String -> Int
 getEndIdx duration m3u8 = getIdx (>) duration m3u8
 
 
-getIdx :: (forall a. Ord a => a -> a -> Bool) -> UTCTime -> String -> Int
-getIdx pred duration m3u8 =
-  let nominalDuration = toEnum . fromEnum . utctDayTime $ duration
-      durations = fmap getTime $ filterTime $ lines m3u8
+getIdx :: (forall a. Ord a => a -> a -> Bool) -> NominalDiffTime -> String -> Int
+getIdx pred nominalDuration m3u8 =
+  let durations = fmap getTime $ filterTime $ lines m3u8
       cumulation = scanl1 (+) durations
   in  length $ takeWhile (pred nominalDuration)cumulation
 
@@ -53,7 +59,9 @@ getIdx pred duration m3u8 =
 parseDuration :: Maybe String -> Maybe UTCTime
 parseDuration mx = case mx of
   Nothing -> Nothing
-  Just x ->  parseRangeTime "%-Hh%-Mm%-Ss" x
+  Just x ->  parseRangeTime "%-dd%-Hh%-Mm%-Ss" x
+              <|> parseRangeTime "%-Hh%-Mm%-Ss" x
+              <|> parseRangeTime "%-Mm%-Ss" x
               <|> parseRangeTime "%-Mm%-Ss" x
               <|> parseRangeTime "%-Hh%-Mm" x
               <|> parseRangeTime "%-Hh" x
@@ -63,14 +71,109 @@ parseDuration mx = case mx of
     parseRangeTime timeFormat x = parseTimeM True defaultTimeLocale timeFormat x
 
 
-format4file :: FormatTime t => t -> String
-format4file = formatTime defaultTimeLocale "%Hh%Mm%Ss"
+-- format4file :: FormatTime t => t -> String
+-- format4file = formatTime defaultTimeLocale "%Hh%Mm%Ss"
+
+format4file :: NominalDiffTime -> String
+format4file = formatNominalDiff "%dh%dm%ds"
 
 
-format4ffmpeg :: FormatTime t => t -> String
-format4ffmpeg = formatTime defaultTimeLocale "%H:%M:%S"
+format4ffmpeg :: NominalDiffTime -> String
+format4ffmpeg = formatNominalDiff "%d:%d:%d"
+
+
+formatNominalDiff :: String -> NominalDiffTime -> String
+formatNominalDiff fmt diff =
+  let totalSec = div (fromEnum diff) (10^12)
+      (hour, hsec) = divMod totalSec 3600 :: (Int, Int)
+      (min, sec)   = divMod hsec 60 :: (Int, Int)
+  in printf fmt hour min sec
+
+
+formatUtc :: UTCTime -> String
+formatUtc = formatTime defaultTimeLocale "%_C%y-%m-%d_%Hh%Mm%Ss"
+
+
+makeOffset :: String -> NominalDiffTime
+makeOffset str =
+  case parse (try (ffmpegDurationP) <|> twitchDurationP) "" str of
+    Left e -> error "offset input error"
+    Right totalsec -> toEnum (totalsec * 10^12)
+
+
+ffmpegDurationP :: Parser Int
+ffmpegDurationP = do
+  h <- read <$> many1 digit <* char ':'
+  m <- read <$> oneOrTwo    <* char ':'
+  s <- read <$> oneOrTwo    <* eof
+  return $ h * 3600 + m * 60 + s
+twoDigits    = (:) <$> sixRad <*> (fmap (: []) digit)
+
+
+twitchDurationP :: Parser Int
+twitchDurationP = try hhmmss
+              <|> try hhmm
+              <|> try hhss
+              <|> try mmss
+              <|> try hh
+              <|> try mm
+              <|> ss
+
+
+oneOrTwo :: Parser String
+oneOrTwo  = (\f -> \s -> if s == 'n' then [f] else [f,s] ) <$> sixRad <*> option 'n' sixRad
+
+
+sixRad :: Parser Char
+sixRad = oneOf "012345"
+
+
+hhmmss :: Parser Int
+hhmmss = do
+  h <- read <$> many1 digit <* char 'h'
+  m <- read <$> oneOrTwo    <* char 'm'
+  s <- read <$> oneOrTwo    <* char 's'
+  return $ h * 3600 + m * 60 + s
+
+
+hhmm :: Parser Int
+hhmm = do
+  h <- read <$> many1 digit <* char 'h'
+  m <- read <$> oneOrTwo    <* char 'm'
+  return $ h * 3600 + m * 60
+
+
+mmss :: Parser Int
+mmss = do
+  m <- read <$> many1 digit <* char 'm'
+  s <- read <$> oneOrTwo    <* char 's'
+  return $ m * 60 + s
+
+
+hhss :: Parser Int
+hhss = do
+  h <- read <$> many1 digit <* char 'h'
+  s <- read <$> oneOrTwo    <* char 's'
+  return $ h * 3600 + s
+
+
+hh :: Parser Int
+hh = do
+  h <- read <$> many1 digit <* char 'h'
+  return $ h * 3600
+
+
+mm :: Parser Int
+mm = do
+  m <- read <$> many1 digit <* char 'm'
+  return $ m * 60
+
+
+ss :: Parser Int
+ss = do
+  s <- read <$> many1 digit <* char 's'
+  return s
 
 
 parseVodUrl :: String -> String
 parseVodUrl = reverse . takeWhile (/= '/') . reverse
-
