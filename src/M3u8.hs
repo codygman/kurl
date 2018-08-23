@@ -1,9 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 
 module M3u8
   ( parseM3u8
-  , StreamInfo
+  , StreamInfo(..)
+  , streaminfo_quality
+  , streaminfo_url
   ) where
 
 
@@ -11,14 +14,18 @@ import Data.Map.Strict
 import Data.Map.Strict as M (lookup)
 import Data.Text
 import Text.ParserCombinators.Parsec
+import Text.ParserCombinators.Parsec as P (noneOf)
 import Data.Maybe
 import Data.Either
+import Control.Lens
 
 
 data StreamInfo = StreamInfo
-  { quality :: Text
-  , url     :: Text
+  { _streaminfo_quality :: String
+  , _streaminfo_url     :: String
   } deriving (Show)
+
+makeLenses ''StreamInfo
 
 
 parseM3u8 :: String -> [StreamInfo]
@@ -41,13 +48,13 @@ entry = do
   infMap <- newline *> extxstreaminf
   url    <- newline *> urlbase64
   let quality = fromMaybe "unknown" (M.lookup "VIDEO" infMap)
-  return $ StreamInfo (pack quality) (pack url)
+  return $ StreamInfo quality url
 
 
 urlbase64 :: Parser String
 urlbase64 = do
   protocol <- string "https://"
-  host <- many (noneOf "/")
+  host <- many (P.noneOf "/")
   path <- many (char '/' <|> base64)
   ext  <- string ".m3u8"
   return $ protocol <> host <> path <> ext
@@ -85,7 +92,7 @@ keyValue = do
   k <- many (alphaNum <|> char '-')
   char '='
   v <- (char '\"' >>  manyTill anyChar (try (char '\"')))
-       <|> many (noneOf ",\n")
+       <|> many (P.noneOf ",\n")
   return (k, v)
 
 
