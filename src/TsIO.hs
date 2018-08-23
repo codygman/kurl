@@ -4,7 +4,6 @@
 module TsIO
   ( processM3U8
   , processTS
-  , makeDnUrl
   , writeComments
   ) where
 
@@ -28,18 +27,13 @@ processTS vodBaseUrl tsIdx = do
 
 processM3U8 :: Text -> Text -> IO ()
 processM3U8 vodBaseUrl m3u8Filename = do
-  printf "downloading => %s/%s\n" vodBaseUrl m3u8Filename
+  printf "downloading => %s as local file %s\n" vodBaseUrl m3u8Filename
   processFile vodBaseUrl m3u8Filename
 
 
 processFile :: Text -> Text -> IO ()
-processFile vodBaseUrl tsName  = do
-  let fullUrl = makeDnUrl vodBaseUrl tsName
+processFile fullUrl tsName  = do
   fetchTs fullUrl >>= writeTs tsName
-
-
-makeDnUrl :: Text -> Text -> Text
-makeDnUrl vodBaseUrl tsName = "https://vod.edgecast.hls.ttvnw.net/" <> vodBaseUrl <> "/chunked/" <> tsName
 
 
 fetchTs :: Text ->  IO B.ByteString
