@@ -151,7 +151,6 @@ deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_userbadge_") }
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_accesstoken_") } ''AccessToken
 
 
-
 makeLenses ''TwitchData
 makeLenses ''Video
 makeLenses ''User
@@ -303,14 +302,15 @@ getChatLogs vodId startNominalDiff endNominalDiff = do
     -- next value for monadic function using previous result
     (\csec -> \comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
     -- actual monadic function
-    (\csec -> (liftIO $ printf "downloading chat comment from %f seconds\n" csec) >> chatLogOffset vodId csec)
+    (\csec -> (liftIO $ printf "downloading chat comment from %d seconds\n" csec) >> chatLogOffset vodId csec)
   let time = Getter $ comment_created_at
       name = Getter $ comment_commenter . commenter_display_name
       mesg = Getter $ comment_message . message_body
   return $ comments ^.. traverse . runGetter ((,,) <$> time <*> name <*> mesg)
   where
-    ssec = fromRational . toRational . utctDayTime $ startUTC
-    esec = fromRational . toRational . utctDayTime $ endUTC
+    ssec = (fromIntegral . fromEnum $ startNominalDiff) / 10^12
+    esec = (fromIntegral . fromEnum $ endNominalDiff) / 10^12
+    -- esec = div (fromEnum endNominalDiff) (10^12)
     untilM :: (MonadIO m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
     untilM a pred next mf = do
       c <- mf a
