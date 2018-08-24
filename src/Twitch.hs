@@ -6,13 +6,14 @@
 
 module Twitch
   ( twitchAPI
-  , getVideoInfo
+  , getLiveVideoInfo
+  , getArchiveVideoInfo
   , getChatLogs
   , comment_message
   , comment_commenter
   , getAccessToken
   , getM3u8
-  , getStreamUrls
+  , getStreamUrl
   , VideoInfo(..)
   , Comment(..)
   , TwitchCfg(..)
@@ -40,7 +41,7 @@ import           Data.Maybe (fromMaybe)
 import           Data.Time
 import           System.Random            (getStdRandom, randomR)
 import           Parse (parseDuration)
-import           M3u8 (StreamInfo, parseM3u8)
+import           M3u8 (StreamInfo, streaminfo_quality, streaminfo_url, parseM3u8)
 
 
 newtype TwitchData a = TwitchData
@@ -166,7 +167,7 @@ makeLenses ''AccessToken
 data VideoInfo = VideoInfo
   { videoinfo_baseUrl         :: Text
   , videoinfo_userDisplayName :: Text
-  , videoinfo_duration        :: Text
+  , videoinfo_duration        :: Maybe Text
   } deriving (Show)
 
 
@@ -179,39 +180,43 @@ data TwitchCfg = TwitchCfg
 
 
 data StreamType = Live | Archive
+  deriving (Show)
 
 
-getVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> m VideoInfo
-getVideoInfo _videoId = do
-  videoResp <- twitchAPI "videos" (E.decodeUtf8 . CB.pack $ _videoId)
+getArchiveVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> String -> m VideoInfo
+getArchiveVideoInfo quality vodId = do
+  maybeFullUrl <- getStreamUrl Archive quality vodId
+  let errMsg  = printf "There's no stream which has the type: %s and quality: %s" (show Archive) quality
+      fullUrl = case maybeFullUrl of
+                  Nothing   -> error errMsg
+                  Just  url -> url
+  videoResp <- twitchAPI "videos" (E.decodeUtf8 . CB.pack $ vodId)
   let twitchData = videoResp ^. responseBody . twitch_data
       userId     = twitchData ^?! traverse . video_user_id
-      baseUrl    = twitchData ^?! traverse . video_thumbnail_url . to extractBaseUrl
       duration   = twitchData ^?! traverse . video_duration
   usersResp <- twitchAPI "users" userId
-
   let username =  usersResp ^. responseBody . twitch_data ^?! traverse . user_display_name
-  return $ VideoInfo { videoinfo_baseUrl         = baseUrl
+  return $ VideoInfo { videoinfo_baseUrl         = fullUrl ^. streaminfo_url . to pack
                      , videoinfo_userDisplayName = username
-                     , videoinfo_duration        = duration
+                     , videoinfo_duration        = Just duration
                      }
-  where
-    -- TODO: More reliable parsing of base url
-    extractBaseUrl url = let pathSplit = split (== '/' ) url
-                         in if Prelude.length pathSplit < 4
-                            then error (T.unpack errMsg)
-                            else pathSplit !! 4
-    errMsg = T.intercalate " \n" [ " Base url extraction from thumbnailurl."
-                                 , " This vod maybe is the recording of ongoing live stream."
-                                 , " This is not a regular vod. Downloading is not supported."
-                                 , " Abort program."
-                                 ]
+
+getLiveVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> String -> m VideoInfo
+getLiveVideoInfo quality channelName = do
+  maybeFullUrl <- getStreamUrl Live quality channelName
+  let errMsg  = printf "There's no stream which has the type: %s and quality: %s" (show Live) quality
+      fullUrl = case maybeFullUrl of
+                  Nothing   -> error errMsg
+                  Just  url -> url
+  return $ VideoInfo { videoinfo_baseUrl         = fullUrl ^. streaminfo_url . to pack
+                     , videoinfo_userDisplayName = pack channelName
+                     , videoinfo_duration        = Nothing
+                     }
 
 
 twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchData a))
 twitchAPI apiKind idParam = do
   cfg <- ask
-
   let newApiUrl = twitchcfg_url_new cfg
       clientId  = twitchcfg_clientid cfg
       url       = printf "%s/%s?id=%s" newApiUrl apiKind idParam
@@ -225,12 +230,11 @@ twitchAPI apiKind idParam = do
 -- Live VOD
 -- https://api.twitch.tv/api/channels/<login_user>/access_token
 -- https://usher.ttvnw.net/api/channel/hls/<login_user>.m3u8?<queryparams>
-
-getStreamUrls :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> m [StreamInfo]
-getStreamUrls streamType loginUserOrVodId = do
+getStreamUrl :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> String -> m (Maybe StreamInfo)
+getStreamUrl streamType streamQuality loginUserOrVodId = do
   accessToken <- getAccessToken streamType loginUserOrVodId
   m3u8 <- getM3u8 streamType loginUserOrVodId accessToken
-  return $ parseM3u8 m3u8
+  return $ findOf folded ( (== streamQuality) . (view streaminfo_quality)) (parseM3u8 m3u8)
 
 
 getM3u8 :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> AccessToken -> m String
@@ -289,8 +293,8 @@ chatLogOffset vodId offset = do
   return $ resp ^. responseBody . comment_data
 
 
-getChatLogs :: (MonadIO m, MonadReader TwitchCfg m) => String -> UTCTime -> UTCTime -> m [(Text, Text, Text)]
-getChatLogs vodId startUTC endUTC = do
+getChatLogs :: (MonadIO m, MonadReader TwitchCfg m) => String -> NominalDiffTime -> NominalDiffTime -> m [(Text, Text, Text)]
+getChatLogs vodId startNominalDiff endNominalDiff = do
   comments <- untilM
     -- initial value for monadic function
     ssec
