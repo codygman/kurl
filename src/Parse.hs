@@ -93,10 +93,9 @@ makeOffset str =
 ffmpegDurationP :: Parser Int
 ffmpegDurationP = do
   h <- read <$> many1 digit <* char ':'
-  m <- read <$> oneOrTwo    <* char ':'
-  s <- read <$> oneOrTwo    <* eof
+  m <- read <$> digit1or2   <* char ':'
+  s <- read <$> digit1or2   <* eof
   return $ h * 3600 + m * 60 + s
-twoDigits    = (:) <$> sixRad <*> (fmap (: []) digit)
 
 
 twitchDurationP :: Parser Int
@@ -109,40 +108,44 @@ twitchDurationP = try hhmmss
               <|> ss
 
 
-oneOrTwo :: Parser String
-oneOrTwo  = (\f -> \s -> if s == 'n' then [f] else [f,s] ) <$> sixRad <*> option 'n' sixRad
-
-
-sixRad :: Parser Char
-sixRad = oneOf "012345"
+-- parses only 00 to 59
+-- 00 to 09 can be represented in the form of single digit 0 to 9
+digit1or2 :: Parser String
+digit1or2  = try (consChar <$> sixRadix <*> digit)
+             <|> (char2Str <$> digit)
+  where
+    nullChar     = 'n'
+    consChar a b = [a,b]
+    char2Str a   = [a]
+    sixRadix     = oneOf "012345"
 
 
 hhmmss :: Parser Int
 hhmmss = do
   h <- read <$> many1 digit <* char 'h'
-  m <- read <$> oneOrTwo    <* char 'm'
-  s <- read <$> oneOrTwo    <* char 's'
+  m <- read <$> digit1or2   <* char 'm'
+  s <- read <$> digit1or2   <* char 's'
   return $ h * 3600 + m * 60 + s
 
 
 hhmm :: Parser Int
 hhmm = do
   h <- read <$> many1 digit <* char 'h'
-  m <- read <$> oneOrTwo    <* char 'm'
+  m <- read <$> digit1or2   <* char 'm'
   return $ h * 3600 + m * 60
 
 
 mmss :: Parser Int
 mmss = do
   m <- read <$> many1 digit <* char 'm'
-  s <- read <$> oneOrTwo    <* char 's'
+  s <- read <$> digit1or2   <* char 's'
   return $ m * 60 + s
 
 
 hhss :: Parser Int
 hhss = do
   h <- read <$> many1 digit <* char 'h'
-  s <- read <$> oneOrTwo    <* char 's'
+  s <- read <$> digit1or2   <* char 's'
   return $ h * 3600 + s
 
 
