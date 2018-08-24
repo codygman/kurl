@@ -44,11 +44,8 @@ main =  do
 
   let vodId = parseVodUrl vod
 
-
-  -- NOTE: duration is Maybe so kinda ugly. need to refactor
-  (VideoInfo fullUrl user duration) <- getVodInfo (if live then Live else Archive) quality vodId cfg
-
   if not live then do
+    (VideoInfo fullUrl user duration) <- runReaderT (getLiveVideoInfo quality vodId) cfg
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset (fromMaybe defaultStart start)
         durationNominalDiff = makeOffset (T.unpack . fromJust $ duration)
@@ -58,12 +55,14 @@ main =  do
     if chat then do
       downloadChat vodId user startNominalDiff endNominalDiff chat cfg
       else return ()
+
     if ts then do
       let localIndexDvrM3u8 = "index-dvr.m3u8"
       downloadVod vodId fullUrl startNominalDiff endNominalDiff localIndexDvrM3u8
       else return ()
 
   else do
+    (VideoInfo fullUrl user _) <- runReaderT (getArchiveVideoInfo quality vodId) cfg
     printEncodingCmdLive user fullUrl
     return ()
 
@@ -86,14 +85,6 @@ parseCmdOpts = execParser $ info
       <*> optional (strOption   ( long "end"      <> short 'e' <> help "recording end offset" ))
       <*> switch                ( long "chat"     <> short 'c' <> help "download vod chat log. Supported on only archive type stream." )
 
-
-
-getVodInfo :: StreamType -> String -> String -> TwitchCfg -> IO VideoInfo
-getVodInfo streamType streamquality vodId cfg = runReaderT (getVideoInfo streamquality vodId) cfg
-  where
-    getVideoInfo = case streamType of
-                     Live -> getLiveVideoInfo
-                     Archive -> getArchiveVideoInfo
 
 
 downloadChat :: String -> T.Text -> NominalDiffTime -> NominalDiffTime -> Bool -> TwitchCfg -> IO ()
