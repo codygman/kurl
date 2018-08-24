@@ -182,45 +182,31 @@ data StreamType = Live | Archive
   deriving (Show)
 
 
-getArchiveVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> String -> m VideoInfo
-getArchiveVideoInfo quality vodId = do
-  maybeFullUrl <- getStreamUrl Archive quality vodId
-  let errMsg  = printf "There's no stream which has the type: %s and quality: %s" (show Archive) quality
-      fullUrl = case maybeFullUrl of
-                  Nothing   -> error errMsg
-                  Just  url -> url
+getArchive :: forall m. (MonadIO m, MonadReader TwitchCfg m) => String -> String -> m VideoInfo
+getArchive quality vodId = do
+  fullUrl   <- m3u8Url Archive quality vodId
   videoResp <- twitchAPI "videos" (E.decodeUtf8 . CB.pack $ vodId)
   let twitchData = videoResp ^. responseBody . twitch_data
       userId     = twitchData ^?! traverse . video_user_id
       duration   = twitchData ^?! traverse . video_duration
   usersResp <- twitchAPI "users" userId
-  let username =  usersResp ^. responseBody . twitch_data ^?! traverse . user_display_name
-  return $ VideoInfo { videoinfo_baseUrl         = fullUrl ^. streaminfo_url . to pack
-                     , videoinfo_userDisplayName = username
-                     , videoinfo_duration        = Just duration
-                     }
-
-getLiveVideoInfo :: (MonadIO m, MonadReader TwitchCfg m) => String -> String -> m VideoInfo
-getLiveVideoInfo quality channelName = do
-  maybeFullUrl <- getStreamUrl Live quality channelName
-  let errMsg  = printf "There's no stream which has the type: %s and quality: %s" (show Live) quality
-      fullUrl = case maybeFullUrl of
-                  Nothing   -> error errMsg
-                  Just  url -> url
-  return $ VideoInfo { videoinfo_baseUrl         = fullUrl ^. streaminfo_url . to pack
-                     , videoinfo_userDisplayName = pack channelName
-                     , videoinfo_duration        = Nothing
-                     }
+  let username   =  usersResp ^. responseBody . twitch_data ^?! traverse . user_display_name
+  return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) username (Just duration)
+  where
+    twitchAPI :: (FromJSON a) => Text -> Text -> m (Response (TwitchData a))
+    twitchAPI apiKind idParam = do
+      cfg <- ask
+      let newApiUrl = twitchcfg_url_new cfg
+          clientId  = twitchcfg_clientid cfg
+          url       = printf "%s/%s?id=%s" newApiUrl apiKind idParam
+          opts      = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+      liftIO $ asJSON =<< getWith opts url
 
 
-twitchAPI :: (MonadIO m, MonadReader TwitchCfg m, FromJSON a) => Text -> Text -> m (Response (TwitchData a))
-twitchAPI apiKind idParam = do
-  cfg <- ask
-  let newApiUrl = twitchcfg_url_new cfg
-      clientId  = twitchcfg_clientid cfg
-      url       = printf "%s/%s?id=%s" newApiUrl apiKind idParam
-      opts      = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
-  liftIO $ asJSON =<< getWith opts url
+getLive :: (MonadIO m, MonadReader TwitchCfg m) => String -> String -> m VideoInfo
+getLive quality channelName = do
+  fullUrl <- m3u8Url Live quality channelName
+  return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) (pack channelName) Nothing
 
 
 -- Archive VOD
@@ -229,22 +215,30 @@ twitchAPI apiKind idParam = do
 -- Live VOD
 -- https://api.twitch.tv/api/channels/<login_user>/access_token
 -- https://usher.ttvnw.net/api/channel/hls/<login_user>.m3u8?<queryparams>
-getStreamUrl :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> String -> m (Maybe StreamInfo)
-getStreamUrl streamType streamQuality loginUserOrVodId = do
-  accessToken <- getAccessToken streamType loginUserOrVodId
-  m3u8 <- getM3u8 streamType loginUserOrVodId accessToken
-  return $ findOf folded ( (== streamQuality) . (view streaminfo_quality)) (parseM3u8 m3u8)
+m3u8Url :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> String -> m StreamInfo
+m3u8Url streamType quality target = do
+  let  errFmt = "Twitch: There's no stream which has the type: %s and quality: %s"
+  m3u8Entry streamType quality target >>= \case
+    Nothing   -> error $ printf errFmt (show streamType) quality
+    Just  url -> return url
+  where
+    m3u8Entry streamType streamQuality loginUserOrVodId = do
+      accessToken <- getAccessToken streamType loginUserOrVodId
+      m3u8        <- m3u8Content streamType loginUserOrVodId accessToken
+      return $ findOf folded ( (== streamQuality) . (view streaminfo_quality)) (parseM3u8 m3u8)
 
 
-getM3u8 :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> AccessToken -> m String
-getM3u8 streamType loginUserOrVodId accessToken = do
+
+
+m3u8Content :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> AccessToken -> m String
+m3u8Content streamType loginUserOrVodId accessToken = do
   cfg <- ask
-  r <- liftIO $ getStdRandom (randomR (1, 99999 :: Int))
-  let clientId = twitchcfg_clientid cfg
-      token = accessToken ^. accesstoken_token
-      sig   = accessToken ^. accesstoken_sig
-      m3u8Url   = printf m3u8Fmt loginUserOrVodId
-      randomInt = printf "%d" r :: String
+  rnd <- liftIO $ getStdRandom (randomR (1, 99999 :: Int))
+  let clientId  = twitchcfg_clientid cfg
+      token     = accessToken ^. accesstoken_token
+      sig       = accessToken ^. accesstoken_sig
+      url       = printf m3u8Fmt loginUserOrVodId
+      randomInt = printf "%d" rnd
       m3u8Opts  = defaults & header "Client-ID"        .~ [ E.encodeUtf8 clientId ]
                            & param  "player"           .~ [ "twitchweb"           ]
                            & param  "token"            .~ [ token                 ]
@@ -253,7 +247,7 @@ getM3u8 streamType loginUserOrVodId accessToken = do
                            & param  "allow_source"     .~ [ "true"                ]
                            & param  "type"             .~ [ "any"                 ]
                            & param  "p"                .~ [ pack randomInt        ]
-  resp <- liftIO $ getWith m3u8Opts m3u8Url
+  resp <- liftIO $ getWith m3u8Opts url
   return $ resp ^. responseBody . to LB.unpack
   where
     archFmt = "https://usher.ttvnw.net/vod/%s.m3u8"
@@ -266,7 +260,7 @@ getM3u8 streamType loginUserOrVodId accessToken = do
 getAccessToken :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> m AccessToken
 getAccessToken streamType loginUserOrVodId = do
   cfg <- ask
-  let clientId = twitchcfg_clientid cfg
+  let clientId  = twitchcfg_clientid cfg
       tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
       tokenUrl  = printf tokenFmt loginUserOrVodId
   resp <- liftIO $ asJSON =<< getWith tokenOpts tokenUrl
@@ -309,7 +303,7 @@ getChatLogs vodId startNominalDiff endNominalDiff = do
   return $ comments ^.. traverse . runGetter ((,,) <$> time <*> name <*> mesg)
   where
     ssec = (fromIntegral . fromEnum $ startNominalDiff) / 10^12
-    esec = (fromIntegral . fromEnum $ endNominalDiff) / 10^12
+    esec = (fromIntegral . fromEnum $ endNominalDiff)   / 10^12
     -- esec = div (fromEnum endNominalDiff) (10^12)
     untilM :: (MonadIO m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
     untilM a pred next mf = do
