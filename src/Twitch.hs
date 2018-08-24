@@ -200,12 +200,6 @@ getLive quality channelName = do
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) (pack channelName) Nothing
 
 
--- Archive VOD
--- https://api.twitch.tv/api/vods/<vod_id>/access_token
--- https://usher.ttvnw.net/vod/<vod_id>.m3u8?<queryparams>
--- Live VOD
--- https://api.twitch.tv/api/channels/<login_user>/access_token
--- https://usher.ttvnw.net/api/channel/hls/<login_user>.m3u8?<queryparams>
 m3u8Url :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> String -> m StreamInfo
 m3u8Url streamType quality target = do
   let  errFmt = "Twitch: There's no stream which has the type: %s and quality: %s"
@@ -217,8 +211,6 @@ m3u8Url streamType quality target = do
       accessToken <- getAccessToken streamType loginUserOrVodId
       m3u8        <- m3u8Content streamType loginUserOrVodId accessToken
       return $ findOf folded ( (== streamQuality) . (view streaminfo_quality)) (parseM3u8 m3u8)
-
-
 
 
 m3u8Content :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> AccessToken -> m String
@@ -277,17 +269,12 @@ chatLogOffset vodId offset = do
   return $ resp ^. responseBody . comment_data
 
 
-getChatLogs :: (MonadIO m, MonadReader TwitchCfg m) => String -> NominalDiffTime -> NominalDiffTime -> m [(Text, Text, Text)]
+getChatLogs :: forall m. (MonadIO m, MonadReader TwitchCfg m) => String -> NominalDiffTime -> NominalDiffTime -> m [(Text, Text, Text)]
 getChatLogs vodId startNominalDiff endNominalDiff = do
-  comments <- untilM
-    -- initial value for monadic function
-    ssec
-    -- predicate for termination
-    (\csec -> \nsec -> nsec == csec || nsec > esec)
-    -- next value for monadic function using previous result
-    (\csec -> \comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
-    -- actual monadic function
-    (\csec -> (liftIO $ printf "downloading chat comment from %d seconds\n" csec) >> chatLogOffset vodId csec)
+  comments <- untilM ssec
+                (\csec -> \nsec -> nsec == csec || nsec > esec)
+                (\csec -> \comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
+                (\csec -> (liftIO $ printf "downloading chat comment from %d seconds\n" csec) >> chatLogOffset vodId csec)
   let time = Getter $ comment_created_at
       name = Getter $ comment_commenter . commenter_display_name
       mesg = Getter $ comment_message . message_body
@@ -295,8 +282,9 @@ getChatLogs vodId startNominalDiff endNominalDiff = do
   where
     ssec = (fromIntegral . fromEnum $ startNominalDiff) / 10^12
     esec = (fromIntegral . fromEnum $ endNominalDiff)   / 10^12
-    -- esec = div (fromEnum endNominalDiff) (10^12)
-    untilM :: (MonadIO m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
+    -- Doing monadic operation until predicate returns true
+    -- untilM initialValue predicate nextValue monadicAction
+    untilM :: forall m a b. (Monad m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
     untilM a pred next mf = do
       c <- mf a
       let a' = next a c
