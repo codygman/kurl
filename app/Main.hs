@@ -3,23 +3,21 @@
 
 module Main where
 
-import           System.Environment     (getArgs)
-import           System.Info            (os)
-import           Text.Printf            (printf)
 
-import           Streamly
-import qualified Streamly.Prelude       as S
-import qualified Data.Text              as T
-
-import           Parse                  (getStartIdx, getEndIdx, parseDuration, parseVodUrl, format4file, formatUtc, format4ffmpeg, makeOffset)
-import           Twitch                 (getLiveVideoInfo, getArchiveVideoInfo, getChatLogs, TwitchCfg(..), VideoInfo(..), StreamType(..))
-import           TsIO                   (processM3U8, processTS, writeComments)
-import           Control.Monad.Reader   (runReaderT, guard)
-import           Data.Maybe
-import           Data.Time
+import           Control.Monad.Reader        (runReaderT)
+import           Data.Maybe                  (fromJust, fromMaybe)
+import           Data.Time                   (NominalDiffTime, getCurrentTime)
+import           Data.Text                   (Text, pack, unpack, intercalate)
 import           Options.Applicative
-import           Data.String
-import           Data.Char
+import           System.Environment          (getArgs)
+import           System.Info                 (os)
+import           Text.Printf                 (printf)
+import           Streamly                    (runStream, serially)
+import           Streamly.Prelude            (fromFoldableM)
+
+import           Parse                       (getStartIdx, getEndIdx, parseVodUrl, format4file, formatUtc, format4ffmpeg, makeOffset)
+import           Twitch                      (getLive, getArchive, getChatLogs, TwitchCfg(..), VideoInfo(..), StreamType(..))
+import           TsIO                        (processM3U8, processTS, writeComments)
 
 
 data CmdOpts = CmdOpts
@@ -45,10 +43,10 @@ main =  do
   let vodId = parseVodUrl vod
 
   if not live then do
-    (VideoInfo fullUrl user duration) <- runReaderT (getLiveVideoInfo quality vodId) cfg
+    (VideoInfo fullUrl user duration) <- runReaderT (getLive quality vodId) cfg
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset (fromMaybe defaultStart start)
-        durationNominalDiff = makeOffset (T.unpack . fromJust $ duration)
+        durationNominalDiff = makeOffset (unpack . fromJust $ duration)
         endNominalDiff      = toEnum $ fromEnum startNominalDiff + fromEnum durationNominalDiff
     printEncodingCmdArchive vodId user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
@@ -62,7 +60,7 @@ main =  do
       else return ()
 
   else do
-    (VideoInfo fullUrl user _) <- runReaderT (getArchiveVideoInfo quality vodId) cfg
+    (VideoInfo fullUrl user _) <- runReaderT (getArchive quality vodId) cfg
     printEncodingCmdLive user fullUrl
     return ()
 
@@ -87,7 +85,7 @@ parseCmdOpts = execParser $ info
 
 
 
-downloadChat :: String -> T.Text -> NominalDiffTime -> NominalDiffTime -> Bool -> TwitchCfg -> IO ()
+downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> Bool -> TwitchCfg -> IO ()
 downloadChat vodId user startNominalDiff endNominalDiff chat cfg =
     if chat then do
       printf "start downloading all comments of vod: %s ...\n"  vodId
@@ -97,43 +95,43 @@ downloadChat vodId user startNominalDiff endNominalDiff chat cfg =
       return ()
 
 
-downloadVod :: String -> T.Text -> NominalDiffTime -> NominalDiffTime -> T.Text -> IO ()
+downloadVod :: String -> Text -> NominalDiffTime -> NominalDiffTime -> Text -> IO ()
 downloadVod vodId url startNominalDiff endNominalDiff m3u8 = do
   printf "start downloading ts files of vod: %s ...\n" vodId
   printf "vod base url => %s\n" url
   let startTime = format4file startNominalDiff
       endTime   = format4file endNominalDiff
-      fileExt   = "mp4" :: T.Text
+      fileExt   = "mp4" :: Text
   -- Downloading index-dvr.m3u8
   processM3U8 url m3u8
-  content <- readFile (T.unpack m3u8)
+  content <- readFile (unpack m3u8)
   -- Calculate proper range
   let s = getStartIdx startNominalDiff content
       e = getEndIdx endNominalDiff content
   printf "download ts range: %d ~ %d\n" s e
   -- Actual download of ts files
   runStream . serially $ do
-    S.fromFoldableM $ fmap (processTS url) [ s .. e ]
+    fromFoldableM $ fmap (processTS url) [ s .. e ]
 
 
-printEncodingCmdArchive :: String -> T.Text -> NominalDiffTime -> NominalDiffTime -> NominalDiffTime -> T.Text -> IO ()
+printEncodingCmdArchive :: String -> Text -> NominalDiffTime -> NominalDiffTime -> NominalDiffTime -> Text -> IO ()
 printEncodingCmdArchive vodId user s d e m3u8 = do
   let start     = format4ffmpeg s
       duration  = format4ffmpeg d
       ext       = "mp4" :: String
-      mp4       = T.pack $ printf "%s_%s_%s_%s.%s" user vodId (format4file s) (format4file e) ext
-      formatStr = T.unpack $ T.intercalate delim ["ffmpeg", "-ss %s", "-t %s", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
+      mp4       = pack $ printf "%s_%s_%s_%s.%s" user vodId (format4file s) (format4file e) ext
+      formatStr = unpack $ intercalate delim ["ffmpeg", "-ss %s", "-t %s", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
   printf formatStr start duration m3u8 mp4
 
 
-printEncodingCmdLive :: T.Text ->  T.Text -> IO ()
+printEncodingCmdLive :: Text ->  Text -> IO ()
 printEncodingCmdLive channelId m3u8 = do
   cutc <- getCurrentTime
   let ext       = "mp4" :: String
-      mp4       = T.pack $ printf "%s_live_%s.%s" channelId (formatUtc cutc) ext
-      formatStr = T.unpack $ T.intercalate delim ["ffmpeg", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
+      mp4       = pack $ printf "%s_live_%s.%s" channelId (formatUtc cutc) ext
+      formatStr = unpack $ intercalate delim ["ffmpeg", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
   printf formatStr m3u8 mp4
 
 
-delim :: T.Text
+delim :: Text
 delim  = if os == "mingw32" || os == "mingw64" then " ^\n" else " \\\n"

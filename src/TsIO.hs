@@ -8,15 +8,14 @@ module TsIO
   ) where
 
 
-import           Data.Text                 (Text)
-import qualified Data.Text              as T
-import qualified Data.Text.IO           as TI
+import           Control.Lens                 ((^.))
 import qualified Data.ByteString        as B
 import qualified Data.ByteString.Lazy   as LB
-import           Text.Printf               (printf)
-import           Network.Wreq              (get, responseBody)
-import           Control.Lens              ((^.))
-import           Data.Monoid               ((<>))
+import           Data.Text                    (Text)
+import qualified Data.Text              as T
+import qualified Data.Text.IO           as TI
+import           Network.Wreq                 (get, responseBody)
+import           Text.Printf                  (printf)
 
 
 processTS :: Text -> Int -> IO ()

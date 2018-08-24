@@ -4,20 +4,17 @@
 
 module M3u8
   ( parseM3u8
-  , StreamInfo(..)
   , streaminfo_quality
   , streaminfo_url
+  , StreamInfo(..)
   ) where
 
 
-import Data.Map.Strict
-import Data.Map.Strict as M (lookup)
-import Data.Text
+import Control.Lens                       (makeLenses)
+import Data.Map.Strict                    (Map, fromList)
+import Data.Map.Strict               as M (lookup)
+import Data.Maybe                         (fromMaybe)
 import Text.ParserCombinators.Parsec
-import Text.ParserCombinators.Parsec as P (noneOf)
-import Data.Maybe
-import Data.Either
-import Control.Lens
 
 
 data StreamInfo = StreamInfo
@@ -25,12 +22,13 @@ data StreamInfo = StreamInfo
   , _streaminfo_url     :: String
   } deriving (Show)
 
+
 makeLenses ''StreamInfo
 
 
 parseM3u8 :: String -> [StreamInfo]
 parseM3u8 m3u8 = case parse m3uParser "" m3u8 of
-                   Left e   -> error $ show e
+                   Left e   -> error $ "M3u8: " <> show e
                    Right ls -> ls
 
 
@@ -54,7 +52,7 @@ entry = do
 urlbase64 :: Parser String
 urlbase64 = do
   protocol <- string "https://"
-  host <- many (P.noneOf "/")
+  host <- many (noneOf "/")
   path <- many (char '/' <|> base64)
   ext  <- string ".m3u8"
   return $ protocol <> host <> path <> ext
@@ -92,7 +90,7 @@ keyValue = do
   k <- many (alphaNum <|> char '-')
   char '='
   v <- (char '\"' >>  manyTill anyChar (try (char '\"')))
-       <|> many (P.noneOf ",\n")
+       <|> many (noneOf ",\n")
   return (k, v)
 
 

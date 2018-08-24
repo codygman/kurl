@@ -1,47 +1,38 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE DeriveGeneric       #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 
 module Twitch
-  ( twitchAPI
-  , getLiveVideoInfo
-  , getArchiveVideoInfo
+  ( getLive
+  , getArchive
   , getChatLogs
-  , comment_message
-  , comment_commenter
-  , getAccessToken
-  , getM3u8
-  , getStreamUrl
   , VideoInfo(..)
-  , Comment(..)
   , TwitchCfg(..)
   , StreamType(..)
   ) where
 
 
-import           Data.Text                 hiding (drop)
-import           Data.Text                 as T   (unpack, intercalate, length)
-import           Data.Text.Encoding        as E  (encodeUtf8, decodeUtf8)
--- import           Data.Text.Lazy.Encoding  as LE (encodeUtf8, decodeUtf8)
-import           Data.Aeson
-import           Data.Aeson.TH
-import           Data.Aeson.Lens
-import qualified Data.ByteString.Char8      as CB
-import qualified Data.ByteString.Lazy.Char8 as LB (unpack)
-import           Network.Wreq
-import           Text.Printf
 import           Control.Lens
-import           Data.Function            ((&))
-import           Data.Monoid              ((<>))
-import           GHC.Generics             (Generic)
-import           Control.Monad.Reader
-import           Data.Maybe (fromMaybe)
-import           Data.Time
-import           System.Random            (getStdRandom, randomR)
-import           Parse (parseDuration)
-import           M3u8 (StreamInfo, streaminfo_quality, streaminfo_url, parseM3u8)
+import           Control.Monad.Reader              (MonadIO, MonadReader, ask, liftIO)
+import           Data.Aeson                        (fieldLabelModifier, defaultOptions, FromJSON)
+import           Data.Aeson.TH                     (deriveJSON)
+import qualified Data.ByteString.Char8      as CB  (pack)
+import qualified Data.ByteString.Lazy.Char8 as LB  (unpack)
+import           Data.Maybe                        (fromMaybe)
+import           Data.Text                  hiding (drop)
+import           Data.Text                  as T   (unpack, intercalate, length)
+import           Data.Text.Encoding         as E   (encodeUtf8, decodeUtf8)
+import           Data.Time                         (NominalDiffTime)
+import           GHC.Generics                      (Generic)
+import           Network.Wreq                      (Response, responseBody, defaults, header, param, asJSON, getWith)
+import           Text.Printf                       (printf)
+import           System.Random                     (getStdRandom, randomR)
+
+import           M3u8                              (StreamInfo, streaminfo_quality, streaminfo_url, parseM3u8)
 
 
 newtype TwitchData a = TwitchData

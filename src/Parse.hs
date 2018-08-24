@@ -2,11 +2,8 @@
 
 
 module Parse
-  ( filterTime
-  , getTime
-  , getStartIdx
+  ( getStartIdx
   , getEndIdx
-  , parseDuration
   , parseVodUrl
   , format4file
   , format4ffmpeg
@@ -15,15 +12,10 @@ module Parse
   ) where
 
 
-import Data.List
-import Data.List.Split hiding (sepBy, oneOf)
-import Data.Time
-import Data.Maybe
-import Data.Time
-import Text.Printf
-import Control.Applicative
-import Text.ParserCombinators.Parsec hiding ((<|>))
-
+import Data.List                     (isPrefixOf)
+import Data.Time                     (UTCTime, NominalDiffTime, formatTime, defaultTimeLocale)
+import Text.ParserCombinators.Parsec
+import Text.Printf                   (printf)
 
 filterTime :: [String] -> [String]
 filterTime lines =
@@ -56,23 +48,20 @@ getIdx pred nominalDuration m3u8 =
   in  length $ takeWhile (pred nominalDuration)cumulation
 
 
-parseDuration :: Maybe String -> Maybe UTCTime
-parseDuration mx = case mx of
-  Nothing -> Nothing
-  Just x ->  parseRangeTime "%-dd%-Hh%-Mm%-Ss" x
-              <|> parseRangeTime "%-Hh%-Mm%-Ss" x
-              <|> parseRangeTime "%-Mm%-Ss" x
-              <|> parseRangeTime "%-Mm%-Ss" x
-              <|> parseRangeTime "%-Hh%-Mm" x
-              <|> parseRangeTime "%-Hh" x
-              <|> parseRangeTime "%-Mm" x
-              <|> parseRangeTime "%-Ss" x
-  where
-    parseRangeTime timeFormat x = parseTimeM True defaultTimeLocale timeFormat x
+-- parseDuration :: Maybe String -> Maybe UTCTime
+-- parseDuration mx = case mx of
+--   Nothing -> Nothing
+--   Just x ->  parseRangeTime "%-dd%-Hh%-Mm%-Ss" x
+--               <|> parseRangeTime "%-Hh%-Mm%-Ss" x
+--               <|> parseRangeTime "%-Mm%-Ss" x
+--               <|> parseRangeTime "%-Mm%-Ss" x
+--               <|> parseRangeTime "%-Hh%-Mm" x
+--               <|> parseRangeTime "%-Hh" x
+--               <|> parseRangeTime "%-Mm" x
+--               <|> parseRangeTime "%-Ss" x
+--   where
+--     parseRangeTime timeFormat x = parseTimeM True defaultTimeLocale timeFormat x
 
-
--- format4file :: FormatTime t => t -> String
--- format4file = formatTime defaultTimeLocale "%Hh%Mm%Ss"
 
 format4file :: NominalDiffTime -> String
 format4file = formatNominalDiff "%dh%dm%ds"
