@@ -17,7 +17,7 @@ module Twitch
 
 
 import           Control.Lens
-import           Control.Monad.Reader              (MonadIO, MonadReader, ask, liftIO)
+import           Control.Monad.Reader              (MonadIO, MonadReader, reader, liftIO)
 import           Data.Aeson                        (fieldLabelModifier, defaultOptions, FromJSON)
 import           Data.Aeson.TH                     (deriveJSON)
 import qualified Data.ByteString.Char8      as CB  (pack)
@@ -186,11 +186,10 @@ getArchive quality vodId = do
   where
     twitchAPI :: (FromJSON a) => Text -> Text -> m (Response (TwitchData a))
     twitchAPI apiKind idParam = do
-      cfg <- ask
-      let newApiUrl = twitchcfg_url_new cfg
-          clientId  = twitchcfg_clientid cfg
-          url       = printf "%s/%s?id=%s" newApiUrl apiKind idParam
-          opts      = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+      newApiUrl <- reader twitchcfg_url_new
+      clientId  <- reader twitchcfg_clientid
+      let url   = printf "%s/%s?id=%s" newApiUrl apiKind idParam
+          opts  = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
       liftIO $ asJSON =<< getWith opts url
 
 
@@ -215,10 +214,9 @@ m3u8Url streamType quality target = do
 
 m3u8Content :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> AccessToken -> m String
 m3u8Content streamType loginUserOrVodId accessToken = do
-  cfg <- ask
+  clientId  <- reader twitchcfg_clientid
   rnd <- liftIO $ getStdRandom (randomR (1, 99999 :: Int))
-  let clientId  = twitchcfg_clientid cfg
-      token     = accessToken ^. accesstoken_token
+  let token     = accessToken ^. accesstoken_token
       sig       = accessToken ^. accesstoken_sig
       url       = printf m3u8Fmt loginUserOrVodId
       randomInt = printf "%d" rnd
@@ -242,9 +240,8 @@ m3u8Content streamType loginUserOrVodId accessToken = do
 
 getAccessToken :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> m AccessToken
 getAccessToken streamType loginUserOrVodId = do
-  cfg <- ask
-  let clientId  = twitchcfg_clientid cfg
-      tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+  clientId  <- reader twitchcfg_clientid
+  let tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
       tokenUrl  = printf tokenFmt loginUserOrVodId
   resp <- liftIO $ asJSON =<< getWith tokenOpts tokenUrl
   return $ resp ^. responseBody
@@ -258,12 +255,12 @@ getAccessToken streamType loginUserOrVodId = do
 
 chatLogOffset :: (MonadIO m, MonadReader TwitchCfg m) => String -> Float -> m [Comment]
 chatLogOffset vodId offset = do
-  cfg <- ask
-  let v5ApiUrl = twitchcfg_url_v5 cfg
-      clientId = twitchcfg_clientid cfg
-      chatPath = twitchcfg_chat_path cfg
-      url      = printf "%s/%s/%s=%f" v5ApiUrl vodId chatPath offset
-      opts     = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+  clientId <- reader twitchcfg_clientid
+  v5ApiUrl <- reader twitchcfg_url_v5
+  clientId <- reader twitchcfg_clientid
+  chatPath <- reader twitchcfg_chat_path
+  let url  = printf "%s/%s/%s=%f" v5ApiUrl vodId chatPath offset
+      opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
                           & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
   resp <- liftIO $ asJSON =<< getWith opts url
   return $ resp ^. responseBody . comment_data

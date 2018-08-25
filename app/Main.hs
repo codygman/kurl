@@ -67,8 +67,7 @@ main =  do
 
 parseCmdOpts :: IO CmdOpts
 parseCmdOpts = execParser $ info
-  ( cmd <**> helper ) ( fullDesc <> progDesc ("Download twitch TARGET. TARGET is <vod url> or <channel name>."
-                                             )
+  ( cmd <**> helper ) ( fullDesc <> progDesc ("Download twitch TARGET. TARGET is <vod url> or <channel name>.")
                                  <> header "kurl - a twitch vod downloader" )
   where
     cmd = CmdOpts
