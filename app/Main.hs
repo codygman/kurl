@@ -15,9 +15,10 @@ import           Text.Printf                 (printf)
 import           Streamly                    (runStream, serially)
 import           Streamly.Prelude            (fromFoldableM)
 
-import           Parse                       (getStartIdx, getEndIdx, parseVodUrl, format4file, formatUtc, format4ffmpeg, makeOffset)
-import           Twitch                      (getLive, getArchive, getChatLogs, TwitchCfg(..), VideoInfo(..), StreamType(..))
+import           M3u8                        (getStartIdx, getEndIdx,)
+import           TimeFormat                  (format4file, formatUtc, format4ffmpeg, makeOffset)
 import           TsIO                        (processM3U8, processTS, writeComments)
+import           Twitch                      (getLive, getArchive, getChatLogs, TwitchCfg(..), VideoInfo(..), StreamType(..))
 
 
 data CmdOpts = CmdOpts
@@ -63,6 +64,10 @@ main =  do
     (VideoInfo fullUrl user _) <- runReaderT (getLive quality vodId) cfg
     printEncodingCmdLive user fullUrl
     return ()
+
+
+parseVodUrl :: String -> String
+parseVodUrl = reverse . takeWhile (/= '/') . reverse
 
 
 parseCmdOpts :: IO CmdOpts

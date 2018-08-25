@@ -4,17 +4,24 @@
 
 module M3u8
   ( parseM3u8
+  , getStartIdx
+  , getEndIdx
   , streaminfo_quality
   , streaminfo_url
+  , test
   , StreamInfo(..)
   ) where
 
 
 import Control.Lens                       (makeLenses)
+import Control.Monad.IO.Class             (liftIO)
 import Data.Map.Strict                    (Map, fromList)
 import Data.Map.Strict               as M (lookup)
 import Data.Maybe                         (fromMaybe)
+import Data.Time                          (NominalDiffTime)
 import Text.ParserCombinators.Parsec
+import Text.Parsec.Prim                   (ParsecT, runParserT)
+import Data.List                          (isPrefixOf)
 
 
 data StreamInfo = StreamInfo
@@ -103,3 +110,56 @@ keyValue = do
 --   <|> string "360p30"
 --   <|> string "160p30"
 --   <|> string "audio_only"
+
+getStartIdx :: NominalDiffTime -> String -> Int
+getStartIdx duration m3u8 = getIdx (>= duration) m3u8
+
+
+getEndIdx :: NominalDiffTime -> String -> Int
+getEndIdx duration m3u8 = getIdx (> duration) m3u8
+
+
+getIdx :: (NominalDiffTime -> Bool) -> String -> Int
+getIdx pred  m3u8 =
+  case parse indexdvrp "" m3u8 of
+    Left  e -> error $ "M3U8: " <> show e
+    Right accumulatedDiffTimes -> length $ takeWhile pred accumulatedDiffTimes
+
+
+indexdvrp :: Parser [NominalDiffTime]
+indexdvrp = do
+  extm3u
+  newline *> string "#EXT-X-VERSION:"             <* skipMany (noneOf "\n")
+  newline *> string "#EXT-X-TARGETDURATION:"      <* skipMany (noneOf "\n")
+  newline *> string "#ID3-EQUIV-TDTG:"            <* skipMany (noneOf "\n")
+  newline *> string "#EXT-X-PLAYLIST-TYPE:"       <* skipMany (noneOf "\n")
+  newline *> string "#EXT-X-MEDIA-SEQUENCE:"      <* skipMany (noneOf "\n")
+  newline *> string "#EXT-X-TWITCH-ELAPSED-SECS:" <* skipMany (noneOf "\n")
+  newline *> string "#EXT-X-TWITCH-TOTAL-SECS:"   <* skipMany (noneOf "\n")
+  nomDifftimes <- manyTill extinfNts (try (spaces *> extxendlist))
+  return $ (scanl1 (+) nomDifftimes)
+  where
+    extxendlist = string "#EXT-X-ENDLIST"
+
+
+extinfNts :: Parser NominalDiffTime
+extinfNts = do
+  floatStr <- newline *> extinf
+  newline *> tsp
+  return $ toNominalDiffTime floatStr
+  where
+    floatp = many1 (digit <|> char '.')
+    extinf = string "#EXTINF:" *> floatp <* char ','
+    tsp    = (++) <$> (many1 digit) <*> string ".ts"
+
+
+toNominalDiffTime :: String -> NominalDiffTime
+toNominalDiffTime s = let f = read s :: Float
+                      in fromRational . toRational $ f
+
+
+test = do
+  content <- readFile "index-dvr.m3u8"
+  case parse indexdvrp "" content of
+    Left e -> error $ show e
+    Right r -> return $ last r

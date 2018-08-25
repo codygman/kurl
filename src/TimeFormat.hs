@@ -1,11 +1,8 @@
 {-# LANGUAGE RankNTypes #-}
 
 
-module Parse
-  ( getStartIdx
-  , getEndIdx
-  , parseVodUrl
-  , format4file
+module TimeFormat
+  ( format4file
   , format4ffmpeg
   , formatUtc
   , makeOffset
@@ -16,36 +13,6 @@ import Data.List                     (isPrefixOf)
 import Data.Time                     (UTCTime, NominalDiffTime, formatTime, defaultTimeLocale)
 import Text.ParserCombinators.Parsec
 import Text.Printf                   (printf)
-
-filterTime :: [String] -> [String]
-filterTime lines =
-  let prefix = "#EXTINF:"
-  in filter (isPrefixOf prefix) lines
-
-
-getTime :: String -> NominalDiffTime
-getTime line = case parse offsetParser "" line of
-                 Left e -> error ("EXFINF parse error --> " <> show e)
-                 Right floatNum -> fromRational . toRational $ ((floatNum :: Float) * 10^12)
-  where
-    offsetParser = do
-      string "#EXTINF:"
-      read <$> many1 (digit <|> char '.')
-
-
-getStartIdx :: NominalDiffTime -> String -> Int
-getStartIdx duration m3u8 = getIdx (>=) duration m3u8
-
-
-getEndIdx :: NominalDiffTime -> String -> Int
-getEndIdx duration m3u8 = getIdx (>) duration m3u8
-
-
-getIdx :: (forall a. Ord a => a -> a -> Bool) -> NominalDiffTime -> String -> Int
-getIdx pred nominalDuration m3u8 =
-  let durations = fmap getTime $ filterTime $ lines m3u8
-      cumulation = scanl1 (+) durations
-  in  length $ takeWhile (pred nominalDuration)cumulation
 
 
 -- parseDuration :: Maybe String -> Maybe UTCTime
@@ -165,7 +132,3 @@ ss :: Parser Int
 ss = do
   s <- read <$> many1 digit <* char 's'
   return s
-
-
-parseVodUrl :: String -> String
-parseVodUrl = reverse . takeWhile (/= '/') . reverse

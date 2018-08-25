@@ -17,7 +17,7 @@ cabal-version:       >=1.20
 
 library
   -- other-modules:
-  exposed-modules:     Parse
+  exposed-modules:     TimeFormat
                      , Twitch
                      , TsIO
                      , M3u8
