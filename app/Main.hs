@@ -43,7 +43,7 @@ main =  do
   let vodId = parseVodUrl vod
 
   if not live then do
-    (VideoInfo fullUrl user duration) <- runReaderT (getLive quality vodId) cfg
+    (VideoInfo fullUrl user duration) <- runReaderT (getArchive quality vodId) cfg
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset (fromMaybe defaultStart start)
         durationNominalDiff = makeOffset (unpack . fromJust $ duration)
@@ -60,7 +60,7 @@ main =  do
       else return ()
 
   else do
-    (VideoInfo fullUrl user _) <- runReaderT (getArchive quality vodId) cfg
+    (VideoInfo fullUrl user _) <- runReaderT (getLive quality vodId) cfg
     printEncodingCmdLive user fullUrl
     return ()
 
