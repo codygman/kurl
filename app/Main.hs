@@ -47,8 +47,8 @@ main =  do
     (VideoInfo fullUrl user duration) <- runReaderT (getArchive quality vodId) cfg
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset (fromMaybe defaultStart start)
-        durationNominalDiff = makeOffset (unpack . fromJust $ duration)
-        endNominalDiff      = toEnum $ fromEnum startNominalDiff + fromEnum durationNominalDiff
+        endNominalDiff      = makeOffset (fromMaybe (unpack . fromJust $ duration) end)
+        durationNominalDiff = endNominalDiff - startNominalDiff
     printEncodingCmdArchive vodId user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
     if chat then do
@@ -124,8 +124,8 @@ printEncodingCmdArchive vodId user s d e m3u8 = do
       duration  = format4ffmpeg d
       ext       = "mp4" :: String
       mp4       = pack $ printf "%s_%s_%s_%s.%s" user vodId (format4file s) (format4file e) ext
-      formatStr = unpack $ intercalate delim ["ffmpeg", "-ss %s", "-t %s", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
-  printf formatStr start duration m3u8 mp4
+      formatStr = unpack $ intercalate delim ["ffmpeg", "-ss %s", "-i %s", "-to %s", "-c:v copy","-c:a copy", "%s\n"]
+  printf formatStr start m3u8 duration mp4
 
 
 printEncodingCmdLive :: Text ->  Text -> IO ()
