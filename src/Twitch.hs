@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
+{-# OPTIONS -Wno-unused-top-binds #-}
 
 module Twitch
   ( getLive
@@ -24,7 +24,7 @@ import qualified Data.ByteString.Char8      as CB  (pack)
 import qualified Data.ByteString.Lazy.Char8 as LB  (unpack)
 import           Data.Maybe                        (fromMaybe)
 import           Data.Text                  hiding (drop)
-import           Data.Text                  as T   (unpack, intercalate, length)
+import           Data.Text                  as T   (length)
 import           Data.Text.Encoding         as E   (encodeUtf8, decodeUtf8)
 import           Data.Time                         (NominalDiffTime)
 import           GHC.Generics                      (Generic)
@@ -200,13 +200,13 @@ getLive quality channelName = do
 
 
 m3u8Url :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> String -> m StreamInfo
-m3u8Url streamType quality target = do
+m3u8Url streamType streamQuality target = do
   let  errFmt = "Twitch: There's no stream which has the type: %s and quality: %s"
-  m3u8Entry streamType quality target >>= \case
-    Nothing   -> error $ printf errFmt (show streamType) quality
+  m3u8Entry target >>= \case
+    Nothing   -> error $ printf errFmt (show streamType) streamQuality
     Just  url -> return url
   where
-    m3u8Entry streamType streamQuality loginUserOrVodId = do
+    m3u8Entry loginUserOrVodId = do
       accessToken <- getAccessToken streamType loginUserOrVodId
       m3u8        <- m3u8Content streamType loginUserOrVodId accessToken
       return $ findOf folded ( (== streamQuality) . (view streaminfo_quality)) (parseM3u8 m3u8)
@@ -257,7 +257,6 @@ chatLogOffset :: (MonadIO m, MonadReader TwitchCfg m) => String -> Float -> m [C
 chatLogOffset vodId offset = do
   clientId <- reader twitchcfg_clientid
   v5ApiUrl <- reader twitchcfg_url_v5
-  clientId <- reader twitchcfg_clientid
   chatPath <- reader twitchcfg_chat_path
   let url  = printf "%s/%s/%s=%f" v5ApiUrl vodId chatPath offset
       opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
@@ -277,13 +276,15 @@ getChatLogs vodId startNominalDiff endNominalDiff = do
       mesg = Getter $ comment_message . message_body
   return $ comments ^.. traverse . runGetter ((,,) <$> time <*> name <*> mesg)
   where
-    ssec = (fromIntegral . fromEnum $ startNominalDiff) / 10^12
-    esec = (fromIntegral . fromEnum $ endNominalDiff)   / 10^12
+    picoPrecision = 10**12
+    ssec = (fromIntegral . fromEnum $ startNominalDiff) / picoPrecision
+    esec = (fromIntegral . fromEnum $ endNominalDiff)   / picoPrecision
     -- Doing monadic operation until predicate returns true
     -- untilM initialValue predicate nextValue monadicAction
-    untilM :: forall m a b. (Monad m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
-    untilM a pred next mf = do
-      c <- mf a
-      let a' = next a c
-      cs <- if pred a a' then return mempty else mf a'
-      return $ mappend cs c
+
+untilM :: forall m a b. (Monad m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
+untilM a predicate next mf = do
+  c <- mf a
+  let a' = next a c
+  cs <- if predicate a a' then return mempty else mf a'
+  return $ mappend cs c
