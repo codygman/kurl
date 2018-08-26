@@ -9,25 +9,9 @@ module TimeFormat
   ) where
 
 
-import Data.List                     (isPrefixOf)
 import Data.Time                     (UTCTime, NominalDiffTime, formatTime, defaultTimeLocale)
 import Text.ParserCombinators.Parsec
 import Text.Printf                   (printf)
-
-
--- parseDuration :: Maybe String -> Maybe UTCTime
--- parseDuration mx = case mx of
---   Nothing -> Nothing
---   Just x ->  parseRangeTime "%-dd%-Hh%-Mm%-Ss" x
---               <|> parseRangeTime "%-Hh%-Mm%-Ss" x
---               <|> parseRangeTime "%-Mm%-Ss" x
---               <|> parseRangeTime "%-Mm%-Ss" x
---               <|> parseRangeTime "%-Hh%-Mm" x
---               <|> parseRangeTime "%-Hh" x
---               <|> parseRangeTime "%-Mm" x
---               <|> parseRangeTime "%-Ss" x
---   where
---     parseRangeTime timeFormat x = parseTimeM True defaultTimeLocale timeFormat x
 
 
 format4file :: NominalDiffTime -> String
@@ -40,10 +24,11 @@ format4ffmpeg = formatNominalDiff "%d:%d:%d"
 
 formatNominalDiff :: String -> NominalDiffTime -> String
 formatNominalDiff fmt diff =
-  let totalSec = div (fromEnum diff) (10^12)
-      (hour, hsec) = divMod totalSec 3600 :: (Int, Int)
-      (min, sec)   = divMod hsec 60 :: (Int, Int)
-  in printf fmt hour min sec
+  let picoPrecision = 12 :: Integer
+      totalSec = div (fromEnum diff) 10^picoPrecision
+      (hours, hsec) = divMod totalSec 3600
+      (minutes, seconds)   = divMod hsec 60
+  in printf fmt hours minutes seconds
 
 
 formatUtc :: UTCTime -> String
@@ -51,10 +36,10 @@ formatUtc = formatTime defaultTimeLocale "%_C%y-%m-%d_%Hh%Mm%Ss"
 
 
 makeOffset :: String -> NominalDiffTime
-makeOffset str =
-  case parse (try (ffmpegDurationP) <|> twitchDurationP) "" str of
-    Left e -> error "offset input error"
-    Right totalsec -> toEnum (totalsec * 10^12)
+makeOffset str = let picoPrecision = 12 :: Integer
+  in case parse (try (ffmpegDurationP) <|> twitchDurationP) "" str of
+    Left e -> error $ "TimeFormat(makeOffset): " <> show e
+    Right totalsec -> toEnum (totalsec * 10^picoPrecision)
 
 
 ffmpegDurationP :: Parser Int
@@ -81,7 +66,6 @@ digit1or2 :: Parser String
 digit1or2  = try (consChar <$> sixRadix <*> digit)
              <|> (char2Str <$> digit)
   where
-    nullChar     = 'n'
     consChar a b = [a,b]
     char2Str a   = [a]
     sixRadix     = oneOf "012345"
