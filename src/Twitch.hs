@@ -177,6 +177,12 @@ data StreamType = Live | Archive
   deriving (Show)
 
 
+getLive :: TwitchMonad m => String -> String -> m VideoInfo
+getLive quality channelName = do
+  fullUrl <- m3u8Url Live quality channelName
+  return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) (pack channelName) Nothing
+
+
 getArchive :: TwitchMonad m => String -> String -> m VideoInfo
 getArchive quality vodId = do
   fullUrl <- m3u8Url Archive quality vodId
@@ -186,21 +192,16 @@ getArchive quality vodId = do
   users <- twitchAPI "users" userId
   let username =  users ^?! traverse . user_display_name
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) username (Just duration)
-  where
-    twitchAPI :: (TwitchMonad m, FromJSON a) => Text -> Text -> m [a]
-    twitchAPI apiKind idParam = do
-      newApiUrl <- reader twitchcfg_url_new
-      clientId  <- reader twitchcfg_clientid
-      let url  = printf "%s/%s?id=%s" newApiUrl apiKind idParam
-          opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
-      r <- liftIO $ asJSON =<< getWith opts url
-      return $ r ^. responseBody . twitch_data
 
 
-getLive :: TwitchMonad m => String -> String -> m VideoInfo
-getLive quality channelName = do
-  fullUrl <- m3u8Url Live quality channelName
-  return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) (pack channelName) Nothing
+twitchAPI :: (TwitchMonad m, FromJSON a) => Text -> Text -> m [a]
+twitchAPI apiKind idParam = do
+  newApiUrl <- reader twitchcfg_url_new
+  clientId  <- reader twitchcfg_clientid
+  let url  = printf "%s/%s?id=%s" newApiUrl apiKind idParam
+      opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+  r <- liftIO $ asJSON =<< getWith opts url
+  return $ r ^. responseBody . twitch_data
 
 
 m3u8Url :: TwitchMonad m => StreamType -> String -> String -> m StreamInfo
