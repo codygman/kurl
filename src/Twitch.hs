@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ConstraintKinds     #-}
 {-# OPTIONS -Wno-unused-top-binds #-}
 
 module Twitch
@@ -28,11 +29,12 @@ import           Data.Text                  as T   (length)
 import           Data.Text.Encoding         as E   (encodeUtf8, decodeUtf8)
 import           Data.Time                         (NominalDiffTime)
 import           GHC.Generics                      (Generic)
-import           Network.Wreq                      (Response, responseBody, defaults, header, param, asJSON, getWith)
+import           Network.Wreq                      (responseBody, defaults, header, param, asJSON, getWith)
 import           Text.Printf                       (printf)
 import           System.Random                     (getStdRandom, randomR)
 
 import           M3u8                              (StreamInfo, streaminfo_quality, streaminfo_url, parseM3u8)
+
 
 
 newtype TwitchData a = TwitchData
@@ -168,38 +170,40 @@ data TwitchCfg = TwitchCfg
   , twitchcfg_chat_path :: Text
   }
 
+type TwitchMonad m = (MonadIO m, MonadReader TwitchCfg m)
+
 
 data StreamType = Live | Archive
   deriving (Show)
 
 
-getArchive :: forall m. (MonadIO m, MonadReader TwitchCfg m) => String -> String -> m VideoInfo
+getArchive :: TwitchMonad m => String -> String -> m VideoInfo
 getArchive quality vodId = do
-  fullUrl   <- m3u8Url Archive quality vodId
-  videoResp <- twitchAPI "videos" (E.decodeUtf8 . CB.pack $ vodId)
-  let twitchData = videoResp ^. responseBody . twitch_data
-      userId     = twitchData ^?! traverse . video_user_id
-      duration   = twitchData ^?! traverse . video_duration
-  usersResp <- twitchAPI "users" userId
-  let username   =  usersResp ^. responseBody . twitch_data ^?! traverse . user_display_name
+  fullUrl <- m3u8Url Archive quality vodId
+  videos  <- twitchAPI "videos" (E.decodeUtf8 . CB.pack $ vodId)
+  let userId   = videos ^?! traverse . video_user_id
+      duration = videos ^?! traverse . video_duration
+  users <- twitchAPI "users" userId
+  let username =  users ^?! traverse . user_display_name
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) username (Just duration)
   where
-    twitchAPI :: (FromJSON a) => Text -> Text -> m (Response (TwitchData a))
+    twitchAPI :: (TwitchMonad m, FromJSON a) => Text -> Text -> m [a]
     twitchAPI apiKind idParam = do
       newApiUrl <- reader twitchcfg_url_new
       clientId  <- reader twitchcfg_clientid
-      let url   = printf "%s/%s?id=%s" newApiUrl apiKind idParam
-          opts  = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
-      liftIO $ asJSON =<< getWith opts url
+      let url  = printf "%s/%s?id=%s" newApiUrl apiKind idParam
+          opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+      r <- liftIO $ asJSON =<< getWith opts url
+      return $ r ^. responseBody . twitch_data
 
 
-getLive :: (MonadIO m, MonadReader TwitchCfg m) => String -> String -> m VideoInfo
+getLive :: TwitchMonad m => String -> String -> m VideoInfo
 getLive quality channelName = do
   fullUrl <- m3u8Url Live quality channelName
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) (pack channelName) Nothing
 
 
-m3u8Url :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> String -> m StreamInfo
+m3u8Url :: TwitchMonad m => StreamType -> String -> String -> m StreamInfo
 m3u8Url streamType streamQuality target = do
   let  errFmt = "Twitch: There's no stream which has the type: %s and quality: %s"
   m3u8Entry target >>= \case
@@ -212,7 +216,7 @@ m3u8Url streamType streamQuality target = do
       return $ findOf folded ( (== streamQuality) . (view streaminfo_quality)) (parseM3u8 m3u8)
 
 
-m3u8Content :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> AccessToken -> m String
+m3u8Content :: TwitchMonad m => StreamType -> String -> AccessToken -> m String
 m3u8Content streamType loginUserOrVodId accessToken = do
   clientId  <- reader twitchcfg_clientid
   rnd <- liftIO $ getStdRandom (randomR (1, 99999 :: Int))
@@ -238,7 +242,7 @@ m3u8Content streamType loginUserOrVodId accessToken = do
                 Archive -> archFmt
 
 
-getAccessToken :: (MonadIO m, MonadReader TwitchCfg m) => StreamType -> String -> m AccessToken
+getAccessToken :: TwitchMonad m => StreamType -> String -> m AccessToken
 getAccessToken streamType loginUserOrVodId = do
   clientId  <- reader twitchcfg_clientid
   let tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
@@ -253,7 +257,7 @@ getAccessToken streamType loginUserOrVodId = do
                  Archive -> archFmt
 
 
-chatLogOffset :: (MonadIO m, MonadReader TwitchCfg m) => String -> Float -> m [Comment]
+chatLogOffset :: TwitchMonad m => String -> Float -> m [Comment]
 chatLogOffset vodId offset = do
   clientId <- reader twitchcfg_clientid
   v5ApiUrl <- reader twitchcfg_url_v5
@@ -265,7 +269,7 @@ chatLogOffset vodId offset = do
   return $ resp ^. responseBody . comment_data
 
 
-getChatLogs :: forall m. (MonadIO m, MonadReader TwitchCfg m) => String -> NominalDiffTime -> NominalDiffTime -> m [(Text, Text, Text)]
+getChatLogs :: TwitchMonad m => String -> NominalDiffTime -> NominalDiffTime -> m [(Text, Text, Text)]
 getChatLogs vodId startNominalDiff endNominalDiff = do
   comments <- untilM ssec
                 (\csec -> \nsec -> nsec == csec || nsec > esec)
