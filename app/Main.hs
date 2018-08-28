@@ -4,7 +4,6 @@
 module Main where
 
 
-import           Control.Monad.Reader        (runReaderT)
 import           Data.Maybe                  (fromJust, fromMaybe)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
@@ -17,7 +16,7 @@ import           Streamly.Prelude            (fromFoldableM)
 import           M3u8                        (getStartIdx, getEndIdx,)
 import           TimeFormat                  (format4file, formatUtc, format4ffmpeg, makeOffset)
 import           TsIO                        (processM3U8, processTS, writeComments)
-import           Twitch                      (getLive, getArchive, getChatLogs, TwitchCfg(..), VideoInfo(..))
+import           Twitch                      (getLive, getArchive, getChatLogs, VideoInfo(..))
 
 
 data CmdOpts = CmdOpts
@@ -33,17 +32,12 @@ data CmdOpts = CmdOpts
 
 main :: IO ()
 main =  do
-  let cfg = TwitchCfg "https://api.twitch.tv/v5/videos" -- v5 api endpoint
-                      "https://api.twitch.tv/helix"     -- new api endpoint
-                      "g9r0psjr0nn0a4ypjh62b6p568jhom"  -- cliendId
-                      "comments?content_offset_seconds" -- chat log path
-
   cmdOpts <- parseCmdOpts
 
   let target = parseVodUrl (vodId cmdOpts)
 
   if not (live cmdOpts) then do
-    (VideoInfo fullUrl user duration) <- runReaderT (getArchive (quality cmdOpts) target) cfg
+    (VideoInfo fullUrl user duration) <- getArchive (quality cmdOpts) target
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
@@ -51,7 +45,7 @@ main =  do
     printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
     if (chat cmdOpts) then do
-      downloadChat target user startNominalDiff endNominalDiff cfg
+      downloadChat target user startNominalDiff endNominalDiff
       else return ()
 
     if (ts cmdOpts) then do
@@ -60,7 +54,7 @@ main =  do
       else return ()
 
   else do
-    (VideoInfo fullUrl user _) <- runReaderT (getLive (quality cmdOpts) (vodId cmdOpts)) cfg
+    (VideoInfo fullUrl user _) <- getLive (quality cmdOpts) (vodId cmdOpts)
     printEncodingCmdLive user fullUrl
     return ()
 
@@ -87,11 +81,10 @@ parseCmdOpts = execParser $ info
       <*> switch                ( long "chat"     <> short 'c' <> help "download vod chat log. Supported on only archive type stream." )
 
 
-
-downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> TwitchCfg -> IO ()
-downloadChat target user startNominalDiff endNominalDiff cfg = do
+downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
+downloadChat target user startNominalDiff endNominalDiff = do
   printf "start downloading all comments of vod: %s ...\n"  target
-  logs <- runReaderT (getChatLogs target startNominalDiff endNominalDiff) cfg
+  logs <- getChatLogs target startNominalDiff endNominalDiff
   writeComments target user logs
 
 

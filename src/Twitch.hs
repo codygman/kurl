@@ -12,13 +12,12 @@ module Twitch
   , getArchive
   , getChatLogs
   , VideoInfo(..)
-  , TwitchCfg(..)
   , StreamType(..)
   ) where
 
 
 import           Control.Lens
-import           Control.Monad.Reader              (MonadIO, MonadReader, reader, liftIO)
+import           Control.Monad.Reader              (MonadIO, MonadReader, runReaderT, reader, liftIO)
 import           Data.Aeson                        (fieldLabelModifier, defaultOptions, FromJSON)
 import           Data.Aeson.TH                     (deriveJSON)
 import qualified Data.ByteString.Char8      as CB  (pack)
@@ -164,10 +163,7 @@ data VideoInfo = VideoInfo
 
 
 data TwitchCfg = TwitchCfg
-  { twitchcfg_url_v5    :: Text
-  , twitchcfg_url_new   :: Text
-  , twitchcfg_clientid  :: Text
-  , twitchcfg_chat_path :: Text
+  { twitchcfg_clientid  :: Text
   }
 
 type TwitchMonad m = (MonadIO m, MonadReader TwitchCfg m)
@@ -177,14 +173,20 @@ data StreamType = Live | Archive
   deriving (Show)
 
 
-getLive :: TwitchMonad m => String -> String -> m VideoInfo
-getLive quality channelName = do
+-- TODO: Remove hardcoded clientId. Maybe we can use Dhall as configuration.
+--       Do we even need Reader pattern here?
+twitchCfg :: TwitchCfg
+twitchCfg = TwitchCfg "g9r0psjr0nn0a4ypjh62b6p568jhom"  -- cliendId
+
+
+getLive :: String -> String -> IO VideoInfo
+getLive quality channelName = flip runReaderT twitchCfg $ do
   fullUrl <- m3u8Url Live quality channelName
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) (pack channelName) Nothing
 
 
-getArchive :: TwitchMonad m => String -> String -> m VideoInfo
-getArchive quality vodId = do
+getArchive :: String -> String -> IO VideoInfo
+getArchive quality vodId = flip runReaderT twitchCfg $ do
   fullUrl <- m3u8Url Archive quality vodId
   videos  <- twitchAPI "videos" (E.decodeUtf8 . CB.pack $ vodId)
   let userId   = videos ^?! traverse . video_user_id
@@ -196,12 +198,13 @@ getArchive quality vodId = do
 
 twitchAPI :: (TwitchMonad m, FromJSON a) => Text -> Text -> m [a]
 twitchAPI apiKind idParam = do
-  newApiUrl <- reader twitchcfg_url_new
   clientId  <- reader twitchcfg_clientid
-  let url  = printf "%s/%s?id=%s" newApiUrl apiKind idParam
+  let url  = printf newApiFmt apiKind idParam
       opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
   r <- liftIO $ asJSON =<< getWith opts url
   return $ r ^. responseBody . twitch_data
+  where
+    newApiFmt = "https://api.twitch.tv/v5/videos/%s/%s?id=%s"
 
 
 m3u8Url :: TwitchMonad m => StreamType -> String -> String -> m StreamInfo
@@ -261,17 +264,17 @@ getAccessToken streamType loginUserOrVodId = do
 chatLogOffset :: TwitchMonad m => String -> Float -> m [Comment]
 chatLogOffset vodId offset = do
   clientId <- reader twitchcfg_clientid
-  v5ApiUrl <- reader twitchcfg_url_v5
-  chatPath <- reader twitchcfg_chat_path
-  let url  = printf "%s/%s/%s=%f" v5ApiUrl vodId chatPath offset
+  let url  = printf v5ApiFmt vodId offset
       opts = defaults & header "Client-ID"    .~ [ E.encodeUtf8 clientId              ]
                       & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
   resp <- liftIO $ asJSON =<< getWith opts url
   return $ resp ^. responseBody . comment_data
+  where
+    v5ApiFmt = "https://api.twitch.tv/helix/%s/comments?content_offset_seconds=%f"
 
 
-getChatLogs :: TwitchMonad m => String -> NominalDiffTime -> NominalDiffTime -> m [(Text, Text, Text)]
-getChatLogs vodId startNominalDiff endNominalDiff = do
+getChatLogs :: String -> NominalDiffTime -> NominalDiffTime -> IO [(Text, Text, Text)]
+getChatLogs vodId startNominalDiff endNominalDiff = flip runReaderT twitchCfg $ do
   comments <- untilM ssec
                 (\csec -> \nsec -> nsec == csec || nsec > esec)
                 (\csec -> \comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
