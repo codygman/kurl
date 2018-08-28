@@ -97,16 +97,6 @@ keyValue = do
   return (k, v)
 
 
--- streamQuality :: Parser String
--- streamQuality =
---   string "chunked"
---   <|> string "720p60"
---   <|> string "720p30"
---   <|> string "480p30"
---   <|> string "360p30"
---   <|> string "160p30"
---   <|> string "audio_only"
-
 getStartIdx :: NominalDiffTime -> String -> Int
 getStartIdx duration m3u8 = getIdx (>= duration) m3u8
 

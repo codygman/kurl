@@ -264,8 +264,8 @@ chatLogOffset vodId offset = do
   v5ApiUrl <- reader twitchcfg_url_v5
   chatPath <- reader twitchcfg_chat_path
   let url  = printf "%s/%s/%s=%f" v5ApiUrl vodId chatPath offset
-      opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
-                          & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
+      opts = defaults & header "Client-ID"    .~ [ E.encodeUtf8 clientId              ]
+                      & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
   resp <- liftIO $ asJSON =<< getWith opts url
   return $ resp ^. responseBody . comment_data
 
@@ -284,9 +284,10 @@ getChatLogs vodId startNominalDiff endNominalDiff = do
     picoPrecision = 10**12
     ssec = (fromIntegral . fromEnum $ startNominalDiff) / picoPrecision
     esec = (fromIntegral . fromEnum $ endNominalDiff)   / picoPrecision
-    -- Doing monadic operation until predicate returns true
-    -- untilM initialValue predicate nextValue monadicAction
 
+
+-- Doing monadic operation until predicate returns true
+-- untilM initialValue predicate nextValue monadicAction
 untilM :: forall m a b. (Monad m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
 untilM a predicate next mf = do
   c <- mf a
