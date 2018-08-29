@@ -7,6 +7,7 @@
 {-# LANGUAGE ConstraintKinds     #-}
 {-# OPTIONS -Wno-unused-top-binds #-}
 
+
 module Twitch
   ( getLive
   , getArchive
@@ -248,7 +249,7 @@ m3u8Content streamType loginUserOrVodId accessToken = do
 
 getAccessToken :: TwitchMonad m => StreamType -> String -> m AccessToken
 getAccessToken streamType loginUserOrVodId = do
-  clientId  <- reader twitchcfg_clientid
+  clientId <- reader twitchcfg_clientid
   let tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
       tokenUrl  = printf tokenFmt loginUserOrVodId
   resp <- liftIO $ asJSON =<< getWith tokenOpts tokenUrl
