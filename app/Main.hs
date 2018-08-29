@@ -76,15 +76,19 @@ parseCmdOpts = execParser $ info
       <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
       <*> optional (strOption ( long "end"      <> short 'e' <> help endHelpMsg                        ) )
       <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
-    targetHelpMsg  = "Download targert ex) 123456789 or playhearthstone or https://www.twitch.tv/videos/123456789."
-                     <> " -- When downloading live type stream, TARGET must be <channel name>"
-                     <> " and downloading archive type stream, TARGET must be <vod url>"
+    targetHelpMsg  = "When downloading live type stream, TARGET must be <channel name>."
+                     <> "ex) kurl playhearthstone --live"
+                     <> "When downloading archive type stream, TARGET must be <vod url>."
+                     <> "ex) kurl https://www.twitch.tv/videos/123456789"
     qualityHelpMsg = "set stream quality. default is chunked."
                      <> " chunked is source quality. ex) chunked, 720p60, 480p30"
+                     <> "ex) kurl https://www.twitch.tv/videos/123456789 --quality 720p60"
     liveHelpMsg    = "set type stream. live or archive. default is archive type"
     tsHelpMsg      = "download ts files of the vod. Supported on only archive type stream."
-    startHelpMsg   = "recording start offset"
-    endHelpMsg     = "recording end offset"
+    startHelpMsg   = "recording start offset. Format is 0h0m0s"
+                     <> "ex) kurl https://www.twitch.tv/videos/123456789 --start 30m"
+    endHelpMsg     = "recording end offset. Format is 0h0m0s"
+                     <> "ex) kurl https://www.twitch.tv/videos/123456789 --end 1h2m3s"
     chatHelpMsg    = "download vod chat log. Supported on only archive type stream."
 
 
