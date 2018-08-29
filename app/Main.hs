@@ -69,16 +69,23 @@ parseCmdOpts = execParser $ info
                                  <> header "kurl - a twitch vod downloader" )
   where
     cmd = CmdOpts
-      <$> strArgument ( metavar "TARGET" <> help ("Download targert ex) 123456789 or playhearthstone or https://www.twitch.tv/videos/123456789."
-                                                 <> " -- When downloading live type stream, TARGET must be <channel name>"
-                                                 <> " and downloading archive type stream, TARGET must be <vod url>"))
-      <*> strOption             ( long "qaulity"  <> short 'q' <> value "chunked" <> help ("set stream quality. default is chunked."
-                                                                                          <> " chunked is source quality. ex) chunked, 720p60, 480p30"))
-      <*> switch                ( long "live"     <> short 'l' <> help "set type stream. live or archive. default is archive type" )
-      <*> switch                ( long "ts"       <> short 't' <> help "download ts files of the vod. Supported on only archive type stream." )
-      <*> optional (strOption   ( long "start"    <> short 's' <> help "recording start offset" ))
-      <*> optional (strOption   ( long "end"      <> short 'e' <> help "recording end offset" ))
-      <*> switch                ( long "chat"     <> short 'c' <> help "download vod chat log. Supported on only archive type stream." )
+      <$> strArgument         ( metavar "TARGET"             <> help targetHelpMsg                     )
+      <*> strOption           ( long "qaulity"  <> short 'q' <> help qualityHelpMsg <> value "chunked" )
+      <*> switch              ( long "live"     <> short 'l' <> help liveHelpMsg                       )
+      <*> switch              ( long "ts"       <> short 't' <> help tsHelpMsg                         )
+      <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
+      <*> optional (strOption ( long "end"      <> short 'e' <> help endHelpMsg                        ) )
+      <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
+    targetHelpMsg  = "Download targert ex) 123456789 or playhearthstone or https://www.twitch.tv/videos/123456789."
+                     <> " -- When downloading live type stream, TARGET must be <channel name>"
+                     <> " and downloading archive type stream, TARGET must be <vod url>"
+    qualityHelpMsg = "set stream quality. default is chunked."
+                     <> " chunked is source quality. ex) chunked, 720p60, 480p30"
+    liveHelpMsg    = "set type stream. live or archive. default is archive type"
+    tsHelpMsg      = "download ts files of the vod. Supported on only archive type stream."
+    startHelpMsg   = "recording start offset"
+    endHelpMsg     = "recording end offset"
+    chatHelpMsg    = "download vod chat log. Supported on only archive type stream."
 
 
 downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
