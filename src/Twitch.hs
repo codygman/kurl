@@ -170,6 +170,8 @@ data TwitchCfg = TwitchCfg
 type TwitchMonad m = (MonadIO m, MonadReader TwitchCfg m)
 
 
+data ApiKind = Videos | Users
+
 data StreamType = Live | Archive
   deriving (Show)
 
@@ -189,23 +191,25 @@ getLive quality channelName = flip runReaderT twitchCfg $ do
 getArchive :: String -> String -> IO VideoInfo
 getArchive quality vodId = flip runReaderT twitchCfg $ do
   fullUrl <- m3u8Url Archive quality vodId
-  videos  <- twitchAPI "videos" (E.decodeUtf8 . CB.pack $ vodId)
+  videos  <- twitchAPI Videos (E.decodeUtf8 . CB.pack $ vodId)
   let userId   = videos ^?! traverse . video_user_id
       duration = videos ^?! traverse . video_duration
-  users <- twitchAPI "users" userId
+  users <- twitchAPI Users userId
   let username =  users ^?! traverse . user_display_name
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) username (Just duration)
 
 
-twitchAPI :: (TwitchMonad m, FromJSON a) => Text -> Text -> m [a]
+twitchAPI :: (TwitchMonad m, FromJSON a) => ApiKind -> Text -> m [a]
 twitchAPI apiKind idParam = do
   clientId  <- reader twitchcfg_clientid
-  let url  = printf newApiFmt apiKind idParam
+  let url  = printf newApiFmt idParam
       opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
   r <- liftIO $ asJSON =<< getWith opts url
   return $ r ^. responseBody . twitch_data
   where
-    newApiFmt = "https://api.twitch.tv/v5/videos/%s/%s?id=%s"
+    newApiFmt = case apiKind of
+                  Videos -> "https://api.twitch.tv/helix/videos?id=%s"
+                  Users  -> "https://api.twitch.tv/helix/users?id=%s"
 
 
 m3u8Url :: TwitchMonad m => StreamType -> String -> String -> m StreamInfo
@@ -271,7 +275,7 @@ chatLogOffset vodId offset = do
   resp <- liftIO $ asJSON =<< getWith opts url
   return $ resp ^. responseBody . comment_data
   where
-    v5ApiFmt = "https://api.twitch.tv/helix/%s/comments?content_offset_seconds=%f"
+    v5ApiFmt = "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f"
 
 
 getChatLogs :: String -> NominalDiffTime -> NominalDiffTime -> IO [(Text, Text, Text)]
@@ -279,7 +283,7 @@ getChatLogs vodId startNominalDiff endNominalDiff = flip runReaderT twitchCfg $ 
   comments <- untilM ssec
                 (\csec -> \nsec -> nsec == csec || nsec > esec)
                 (\csec -> \comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
-                (\csec -> (liftIO $ printf "downloading chat comment from %d seconds\n" csec) >> chatLogOffset vodId csec)
+                (\csec -> (liftIO $ printf "downloading chat comment from %f seconds\n" csec) >> chatLogOffset vodId csec)
   let time = Getter $ comment_created_at
       name = Getter $ comment_commenter . commenter_display_name
       mesg = Getter $ comment_message . message_body
