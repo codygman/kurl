@@ -4,6 +4,7 @@
 module Main where
 
 
+import           Control.Monad               (when)
 import           Data.Maybe                  (fromJust, fromMaybe)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
@@ -32,7 +33,7 @@ data CmdOpts = CmdOpts
 
 
 main :: IO ()
-main =  do
+main = do
   cmdOpts <- parseCmdOpts
 
   let target = parseVodUrl (vodId cmdOpts)
@@ -43,23 +44,28 @@ main =  do
         startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
         durationNominalDiff = endNominalDiff - startNominalDiff
-    if (bare cmdOpts) then printf "%s" fullUrl
-    else printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
-    if (chat cmdOpts) then do
-      downloadChat target user startNominalDiff endNominalDiff
-      else return ()
+    if (bare cmdOpts)
+      then
+        printf "%s" fullUrl
+      else do
+        printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
-    if (ts cmdOpts) then do
-      let localIndexDvrM3u8 = "index-dvr.m3u8"
-      downloadVod target fullUrl startNominalDiff endNominalDiff localIndexDvrM3u8
-      else return ()
+        when (chat cmdOpts) $ do
+         downloadChat target user startNominalDiff endNominalDiff
+
+        when (ts cmdOpts) $ do
+          -- TODO: this is not proper file name for index-dvr.m3u8
+          --       this must be extracted from full url.
+          let localIndexDvrM3u8 = "index-dvr.m3u8"
+          downloadVod target fullUrl startNominalDiff endNominalDiff localIndexDvrM3u8
 
   else do
     (VideoInfo fullUrl user _) <- getLive (quality cmdOpts) (vodId cmdOpts)
-    if (bare cmdOpts) then printf "%s" fullUrl
-    else printEncodingCmdLive user fullUrl
-    return ()
+    if (bare cmdOpts)
+      then printf "%s" fullUrl
+    else
+      printEncodingCmdLive user fullUrl
 
 
 parseVodUrl :: String -> String
