@@ -25,7 +25,7 @@ format4ffmpeg = formatNominalDiff "%d:%d:%d"
 formatNominalDiff :: String -> NominalDiffTime -> String
 formatNominalDiff fmt diff =
   let picoPrecision = 12 :: Integer
-      totalSec = div (fromEnum diff) 10^picoPrecision
+      totalSec = div (fromEnum diff) (10^picoPrecision)
       (hours, hsec) = divMod totalSec 3600
       (minutes, seconds)   = divMod hsec 60
   in printf fmt hours minutes seconds
