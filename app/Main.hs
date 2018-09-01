@@ -27,6 +27,7 @@ data CmdOpts = CmdOpts
   , start   :: Maybe String
   , end     :: Maybe String
   , chat    :: Bool
+  , bare    :: Bool
   }
 
 
@@ -42,7 +43,8 @@ main =  do
         startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
         durationNominalDiff = endNominalDiff - startNominalDiff
-    printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
+    if (bare cmdOpts) then printf "%s" fullUrl
+    else printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
     if (chat cmdOpts) then do
       downloadChat target user startNominalDiff endNominalDiff
@@ -55,7 +57,8 @@ main =  do
 
   else do
     (VideoInfo fullUrl user _) <- getLive (quality cmdOpts) (vodId cmdOpts)
-    printEncodingCmdLive user fullUrl
+    if (bare cmdOpts) then printf "%s" fullUrl
+    else printEncodingCmdLive user fullUrl
     return ()
 
 
@@ -76,7 +79,7 @@ parseCmdOpts = execParser $ info
       <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
       <*> optional (strOption ( long "end"      <> short 'e' <> help endHelpMsg                        ) )
       <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
-      <*> switch              ( long "bare"     <> short 'b' <> help tsHelpMsg                         )
+      <*> switch              ( long "bare"     <> short 'b' <> help bareHelpMsg                         )
     targetHelpMsg  = "When downloading live type stream, TARGET must be <channel name>."
                      <> "ex) kurl playhearthstone --live"
                      <> "When downloading archive type stream, TARGET must be <vod url>."
@@ -91,6 +94,7 @@ parseCmdOpts = execParser $ info
     endHelpMsg     = "recording end offset. Format is 0h0m0s"
                      <> "ex) kurl https://www.twitch.tv/videos/123456789 --end 1h2m3s"
     chatHelpMsg    = "download vod chat log. Supported on only archive type stream."
+    bareHelpMsg    = "Prints only m3u8 url. Useful for using url for otehr programs."
 
 
 downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
