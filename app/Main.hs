@@ -70,12 +70,13 @@ parseCmdOpts = execParser $ info
   where
     cmd = CmdOpts
       <$> strArgument         ( metavar "TARGET"             <> help targetHelpMsg                     )
-      <*> strOption           ( long "qaulity"  <> short 'q' <> help qualityHelpMsg <> value "chunked" )
+      <*> strOption           ( long "quality"  <> short 'q' <> help qualityHelpMsg <> value "chunked" )
       <*> switch              ( long "live"     <> short 'l' <> help liveHelpMsg                       )
       <*> switch              ( long "ts"       <> short 't' <> help tsHelpMsg                         )
       <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
       <*> optional (strOption ( long "end"      <> short 'e' <> help endHelpMsg                        ) )
       <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
+      <*> switch              ( long "bare"     <> short 'b' <> help tsHelpMsg                         )
     targetHelpMsg  = "When downloading live type stream, TARGET must be <channel name>."
                      <> "ex) kurl playhearthstone --live"
                      <> "When downloading archive type stream, TARGET must be <vod url>."
