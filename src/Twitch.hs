@@ -36,7 +36,6 @@ import           System.Random                     (getStdRandom, randomR)
 import           M3u8                              (StreamInfo, streaminfo_quality, streaminfo_url, parseM3u8)
 
 
-
 newtype TwitchData a = TwitchData
   { _twitch_data :: [a]
   } deriving (Show, Generic)
@@ -163,7 +162,7 @@ data VideoInfo = VideoInfo
   } deriving (Show)
 
 
-data TwitchCfg = TwitchCfg
+newtype TwitchCfg = TwitchCfg
   { twitchcfg_clientid  :: Text
   }
 
@@ -222,7 +221,7 @@ m3u8Url streamType streamQuality target = do
     m3u8Entry loginUserOrVodId = do
       accessToken <- getAccessToken streamType loginUserOrVodId
       m3u8        <- m3u8Content streamType loginUserOrVodId accessToken
-      return $ findOf folded ( (== streamQuality) . (view streaminfo_quality)) (parseM3u8 m3u8)
+      return $ findOf folded ((== streamQuality) . view streaminfo_quality) (parseM3u8 m3u8)
 
 
 m3u8Content :: TwitchMonad m => StreamType -> String -> AccessToken -> m String
@@ -281,10 +280,10 @@ chatLogOffset vodId offset = do
 getChatLogs :: String -> NominalDiffTime -> NominalDiffTime -> IO [(Text, Text, Text)]
 getChatLogs vodId startNominalDiff endNominalDiff = flip runReaderT twitchCfg $ do
   comments <- untilM ssec
-                (\csec -> \nsec -> nsec == csec || nsec > esec)
-                (\csec -> \comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
-                (\csec -> (liftIO $ printf "downloading chat comment from %f seconds\n" csec) >> chatLogOffset vodId csec)
-  let time = Getter $ comment_created_at
+                (\csec nsec -> nsec == csec || nsec > esec)
+                (\csec comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
+                (\csec -> liftIO (printf "downloading chat comment from %f seconds\n" csec) >> chatLogOffset vodId csec)
+  let time = Getter comment_created_at
       name = Getter $ comment_commenter . commenter_display_name
       mesg = Getter $ comment_message . message_body
   return $ comments ^.. traverse . runGetter ((,,) <$> time <*> name <*> mesg)
