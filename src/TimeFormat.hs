@@ -37,7 +37,7 @@ formatUtc = formatTime defaultTimeLocale "%_C%y-%m-%d_%Hh%Mm%Ss"
 
 makeOffset :: String -> NominalDiffTime
 makeOffset str = let picoPrecision = 12 :: Integer
-  in case parse (try (ffmpegDurationP) <|> twitchDurationP) "" str of
+  in case parse (try ffmpegDurationP <|> twitchDurationP) "" str of
     Left e -> error $ "TimeFormat(makeOffset): " <> show e
     Right totalsec -> toEnum (totalsec * 10^picoPrecision)
 
@@ -113,6 +113,4 @@ mm = do
 
 
 ss :: Parser Int
-ss = do
-  s <- read <$> many1 digit <* char 's'
-  return s
+ss = read <$> many1 digit <* char 's'

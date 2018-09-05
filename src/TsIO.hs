@@ -31,8 +31,7 @@ processM3U8 vodBaseUrl m3u8Filename = do
 
 
 processFile :: Text -> Text -> IO ()
-processFile fullUrl tsName  = do
-  fetchTs fullUrl >>= writeTs tsName
+processFile fullUrl tsName = fetchTs fullUrl >>= writeTs tsName
 
 
 fetchTs :: Text ->  IO B.ByteString

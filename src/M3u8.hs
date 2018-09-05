@@ -13,6 +13,7 @@ module M3u8
 
 
 import Control.Lens                       (makeLenses)
+import Data.Functor
 import Data.Map.Strict                    (Map, fromList)
 import Data.Map.Strict               as M (lookup)
 import Data.Maybe                         (fromMaybe)
@@ -39,8 +40,7 @@ m3uParser :: Parser [StreamInfo]
 m3uParser = do
   _ <- extm3u         *> newline
   _ <- extxtwitchinfo *> newline
-  ls <- many (entry <* newline)
-  return ls
+  many (entry <* newline)
 
 
 entry :: Parser StreamInfo
@@ -98,11 +98,11 @@ keyValue = do
 
 
 getStartIdx :: NominalDiffTime -> String -> Int
-getStartIdx duration m3u8 = getIdx (>= duration) m3u8
+getStartIdx duration = getIdx (>= duration)
 
 
 getEndIdx :: NominalDiffTime -> String -> Int
-getEndIdx duration m3u8 = getIdx (> duration) m3u8
+getEndIdx duration = getIdx (> duration)
 
 
 getIdx :: (NominalDiffTime -> Bool) -> String -> Int
@@ -123,7 +123,7 @@ indexdvrp = do
   _ <- newline *> string "#EXT-X-TWITCH-ELAPSED-SECS:" <* skipMany (noneOf "\n")
   _ <- newline *> string "#EXT-X-TWITCH-TOTAL-SECS:"   <* skipMany (noneOf "\n")
   nomDifftimes <- manyTill extinfNts (try (spaces *> extxendlist))
-  return $ (scanl1 (+) nomDifftimes)
+  return $ scanl1 (+) nomDifftimes
   where
     extxendlist = string "#EXT-X-ENDLIST"
 
@@ -136,7 +136,7 @@ extinfNts = do
   where
     floatp = many1 (digit <|> char '.')
     extinf = string "#EXTINF:" *> floatp <* char ','
-    tsp    = (++) <$> (many1 digit) <*> string ".ts"
+    tsp    = (++) <$> many1 digit <*> string ".ts"
 
 
 toNominalDiffTime :: String -> NominalDiffTime
