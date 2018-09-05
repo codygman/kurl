@@ -45,13 +45,14 @@ main = do
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
         durationNominalDiff = endNominalDiff - startNominalDiff
 
-    if (bare cmdOpts)
+    if bare cmdOpts
       then
         printf "%s" fullUrl
       else do
         printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
         when (chat cmdOpts) $ do
+         printf "Start downloading chat...\n"
          downloadChat target user startNominalDiff endNominalDiff
 
         when (ts cmdOpts) $ do
@@ -61,8 +62,8 @@ main = do
           downloadVod target fullUrl startNominalDiff endNominalDiff localIndexDvrM3u8
 
   else do
-    (VideoInfo fullUrl user _) <- getLive (quality cmdOpts) (vodId cmdOpts)
-    if (bare cmdOpts)
+    VideoInfo fullUrl user _ <- getLive (quality cmdOpts) (vodId cmdOpts)
+    if bare cmdOpts
       then printf "%s" fullUrl
     else
       printEncodingCmdLive user fullUrl
@@ -74,7 +75,7 @@ parseVodUrl = reverse . takeWhile (/= '/') . reverse
 
 parseCmdOpts :: IO CmdOpts
 parseCmdOpts = execParser $ info
-  ( cmd <**> helper ) ( fullDesc <> progDesc ("Download twitch TARGET. TARGET is <vod url> or <channel name>.")
+  ( cmd <**> helper ) ( fullDesc <> progDesc "Download twitch TARGET. TARGET is <vod url> or <channel name>."
                                  <> header "kurl - a twitch vod downloader" )
   where
     cmd = CmdOpts
@@ -122,8 +123,7 @@ downloadVod target url startNominalDiff endNominalDiff m3u8 = do
       e = getEndIdx endNominalDiff content
   printf "download ts range: %d ~ %d\n" s e
   -- Actual download of ts files
-  runStream . serially $ do
-    fromFoldableM $ fmap (processTS url) [ s .. e ]
+  runStream . serially $ fromFoldableM $ fmap (processTS url) [ s .. e ]
 
 
 printEncodingCmdArchive :: String -> Text -> NominalDiffTime -> NominalDiffTime -> NominalDiffTime -> Text -> IO ()
