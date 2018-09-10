@@ -1,0 +1,4 @@
+#+SEQ_TODO: TODO(t) NEXT(n) PROJ(p) WAITING(w) | DONE(d) CANCELLED(c)
+* Features:
+** TODO configuration via dhall
+** TODO A GUI. gtk or web?
