@@ -1,4 +1,4 @@
-{ mkDerivation, aeson, base, bytestring, containers, lens
+{ mkDerivation, aeson, base, bytestring, containers, dhall, lens
 , lens-aeson, mtl, optparse-applicative, parsec, random, split
 , stdenv, streamly, text, time, wreq
 }:
@@ -13,7 +13,7 @@ mkDerivation {
     split text time wreq
   ];
   executableHaskellDepends = [
-    base mtl optparse-applicative streamly text time
+    base dhall mtl optparse-applicative streamly text time
   ];
   license = stdenv.lib.licenses.bsd3;
 }

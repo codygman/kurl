@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE DeriveGeneric   #-}
+{-# LANGUAGE LambdaCase   #-}
 
 
 module Main where
@@ -18,34 +20,57 @@ import           M3u8                        (getStartIdx, getEndIdx,)
 import           TimeFormat                  (format4file, formatUtc, format4ffmpeg, makeOffset)
 import           TsIO                        (processM3U8, processTS, writeComments)
 import           Twitch                      (getLive, getArchive, getChatLogs, VideoInfo(..))
+import qualified Dhall as Dh
 
 
 data CmdOpts = CmdOpts
   { vodId   :: String
+  , live    :: Maybe LiveOrArchive
+  , bare    :: Maybe BareOrFull
   , quality :: String
-  , live    :: Bool
   , ts      :: Bool
   , start   :: Maybe String
   , end     :: Maybe String
   , chat    :: Bool
-  , bare    :: Bool
   }
+
+
+data LiveOrArchive = Live | Archive
+data BareOrFull    = Bare | Full
+
+
+data KurlConf = KurlConf
+  { kurlConfClientId :: String
+  , kurlConfLive     :: Bool
+  , kurlConfBare    :: Bool
+  } deriving (Dh.Generic, Show)
+
+instance Dh.Interpret KurlConf
 
 
 main :: IO ()
 main = do
+  kurlConf <- Dh.input Dh.auto "./kurl.config" :: IO KurlConf
+
   cmdOpts <- parseCmdOpts
+
+  let liveness = maybe (kurlConfLive kurlConf)
+                       (\case Live -> True; Archive -> False)
+                       (live cmdOpts)
+      bareness = maybe (kurlConfBare kurlConf)
+                       (\case Bare -> True; Full -> False)
+                       (bare cmdOpts)
 
   let target = parseVodUrl (vodId cmdOpts)
 
-  if not (live cmdOpts) then do
+  if not liveness then do
     (VideoInfo fullUrl user duration) <- getArchive (quality cmdOpts) target
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
         durationNominalDiff = endNominalDiff - startNominalDiff
 
-    if bare cmdOpts
+    if bareness
       then
         printf "%s" fullUrl
       else do
@@ -63,7 +88,7 @@ main = do
 
   else do
     VideoInfo fullUrl user _ <- getLive (quality cmdOpts) (vodId cmdOpts)
-    if bare cmdOpts
+    if bareness
       then printf "%s" fullUrl
     else
       printEncodingCmdLive user fullUrl
@@ -80,28 +105,32 @@ parseCmdOpts = execParser $ info
   where
     cmd = CmdOpts
       <$> strArgument         ( metavar "TARGET"             <> help targetHelpMsg                     )
+      <*> optional (   flag' Archive  ( long "arch"     <> short 'a' <> help archHelpMsg               )
+                   <|> flag' Live     ( long "live"     <> short 'l' <> help liveHelpMsg               ))
+      <*> optional (   flag' Full     ( long "full"     <> short 'f' <> help fullHelpMsg               )
+                   <|> flag' Bare     ( long "bare"     <> short 'b' <> help bareHelpMsg               ))
       <*> strOption           ( long "quality"  <> short 'q' <> help qualityHelpMsg <> value "chunked" )
-      <*> switch              ( long "live"     <> short 'l' <> help liveHelpMsg                       )
       <*> switch              ( long "ts"       <> short 't' <> help tsHelpMsg                         )
       <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
       <*> optional (strOption ( long "end"      <> short 'e' <> help endHelpMsg                        ) )
       <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
-      <*> switch              ( long "bare"     <> short 'b' <> help bareHelpMsg                         )
     targetHelpMsg  = "When downloading live type stream, TARGET must be <channel name>."
                      <> "ex) kurl playhearthstone --live"
                      <> "When downloading archive type stream, TARGET must be <vod url>."
                      <> "ex) kurl https://www.twitch.tv/videos/123456789"
+    liveHelpMsg    = "set type stream to live. cannot be used with --arch option."
+    archHelpMsg    = "set type stream to archive. cannot be used with --live option."
+    bareHelpMsg    = "Prints only m3u8 url. Useful for using url for otehr programs."
+    fullHelpMsg    = "Prints full encoding command."
     qualityHelpMsg = "set stream quality. default is chunked."
                      <> " chunked is source quality. ex) chunked, 720p60, 480p30"
                      <> "ex) kurl https://www.twitch.tv/videos/123456789 --quality 720p60"
-    liveHelpMsg    = "set type stream. live or archive. default is archive type"
     tsHelpMsg      = "download ts files of the vod. Supported on only archive type stream."
     startHelpMsg   = "recording start offset. Format is 0h0m0s"
                      <> "ex) kurl https://www.twitch.tv/videos/123456789 --start 30m"
     endHelpMsg     = "recording end offset. Format is 0h0m0s"
                      <> "ex) kurl https://www.twitch.tv/videos/123456789 --end 1h2m3s"
     chatHelpMsg    = "download vod chat log. Supported on only archive type stream."
-    bareHelpMsg    = "Prints only m3u8 url. Useful for using url for otehr programs."
 
 
 downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()

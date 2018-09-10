@@ -48,6 +48,7 @@ executable kurl
                      , mtl
                      , time
                      , optparse-applicative
+                     , dhall
   hs-source-dirs:      app
   default-language:    Haskell2010
 
