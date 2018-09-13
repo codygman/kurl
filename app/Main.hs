@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE DeriveGeneric   #-}
 {-# LANGUAGE LambdaCase   #-}
 
 
@@ -10,6 +9,7 @@ import           Control.Monad               (when)
 import           Data.Maybe                  (fromJust, fromMaybe)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
+import qualified Dhall                    as Dh
 import           Options.Applicative
 import           System.Info                 (os)
 import           Text.Printf                 (printf)
@@ -20,8 +20,7 @@ import           M3u8                        (getStartIdx, getEndIdx,)
 import           TimeFormat                  (format4file, formatUtc, format4ffmpeg, makeOffset)
 import           TsIO                        (processM3U8, processTS, writeComments)
 import           Twitch                      (getLive, getArchive, getChatLogs, VideoInfo(..))
-import qualified Dhall as Dh
-
+import           Conf                        (KurlConf(..))
 
 data CmdOpts = CmdOpts
   { vodId   :: String
@@ -37,15 +36,6 @@ data CmdOpts = CmdOpts
 
 data LiveOrArchive = Live | Archive
 data BareOrFull    = Bare | Full
-
-
-data KurlConf = KurlConf
-  { kurlConfClientId :: String
-  , kurlConfLive     :: Bool
-  , kurlConfBare    :: Bool
-  } deriving (Dh.Generic, Show)
-
-instance Dh.Interpret KurlConf
 
 
 main :: IO ()
@@ -64,7 +54,7 @@ main = do
   let target = parseVodUrl (vodId cmdOpts)
 
   if not liveness then do
-    (VideoInfo fullUrl user duration) <- getArchive (quality cmdOpts) target
+    (VideoInfo fullUrl user duration) <- getArchive kurlConf (quality cmdOpts) target
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
@@ -78,7 +68,7 @@ main = do
 
         when (chat cmdOpts) $ do
          printf "Start downloading chat...\n"
-         downloadChat target user startNominalDiff endNominalDiff
+         downloadChat kurlConf target user startNominalDiff endNominalDiff
 
         when (ts cmdOpts) $ do
           -- TODO: this is not proper file name for index-dvr.m3u8
@@ -87,7 +77,7 @@ main = do
           downloadVod target fullUrl startNominalDiff endNominalDiff localIndexDvrM3u8
 
   else do
-    VideoInfo fullUrl user _ <- getLive (quality cmdOpts) (vodId cmdOpts)
+    VideoInfo fullUrl user _ <- getLive kurlConf (quality cmdOpts) (vodId cmdOpts)
     if bareness
       then printf "%s" fullUrl
     else
@@ -133,10 +123,10 @@ parseCmdOpts = execParser $ info
     chatHelpMsg    = "download vod chat log. Supported on only archive type stream."
 
 
-downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
-downloadChat target user startNominalDiff endNominalDiff = do
+downloadChat :: KurlConf -> String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
+downloadChat kurlConf target user startNominalDiff endNominalDiff = do
   printf "start downloading all comments of vod: %s ...\n"  target
-  logs <- getChatLogs target startNominalDiff endNominalDiff
+  logs <- getChatLogs kurlConf target startNominalDiff endNominalDiff
   writeComments target user logs
 
 
