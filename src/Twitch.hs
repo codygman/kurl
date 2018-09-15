@@ -35,7 +35,7 @@ import           System.Random                     (getStdRandom, randomR)
 
 import           M3u8                              (StreamInfo, streaminfo_quality, streaminfo_url, parseM3u8)
 import           Conf                              (KurlConf(..))
-import           TsIO                              (writeComments)
+
 
 newtype TwitchData a = TwitchData
   { _twitch_data :: [a]

@@ -22,6 +22,7 @@ import           TsIO                        (processM3U8, processTS, writeComme
 import           Twitch                      (getLive, getArchive, getChatLogs, VideoInfo(..))
 import           Conf                        (KurlConf(..))
 
+
 data CmdOpts = CmdOpts
   { vodId   :: String
   , live    :: Maybe LiveOrArchive
