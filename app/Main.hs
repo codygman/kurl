@@ -88,7 +88,7 @@ parseCmdOpts = execParser $ info
       <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
       <*> switch              ( long "bare"     <> short 'b' <> help bareHelpMsg                         )
     targetHelpMsg  = "When downloading live type stream, TARGET must be <channel name>."
-                     <> "ex) kurl playhearthstone --live"
+                     <> "ex) kurl playhearthstone"
                      <> "When downloading archive type stream, TARGET must be <vod url>."
                      <> "ex) kurl https://www.twitch.tv/videos/123456789"
     qualityHelpMsg = "set stream quality. default is chunked."
