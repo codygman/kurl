@@ -5,6 +5,7 @@ module Main where
 
 
 import           Control.Monad               (when)
+import           Data.Char                   (isNumber)
 import           Data.Maybe                  (fromJust, fromMaybe)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
@@ -23,7 +24,6 @@ import           Twitch                      (getLive, getArchive, getChatLogs, 
 data CmdOpts = CmdOpts
   { vodId   :: String
   , quality :: String
-  , live    :: Bool
   , ts      :: Bool
   , start   :: Maybe String
   , end     :: Maybe String
@@ -36,9 +36,9 @@ main :: IO ()
 main = do
   cmdOpts <- parseCmdOpts
 
-  let target = parseVodUrl (vodId cmdOpts)
+  let (notLive, target) = parseVodUrl (vodId cmdOpts)
 
-  if not (live cmdOpts) then do
+  if notLive then do
     (VideoInfo fullUrl user duration) <- getArchive (quality cmdOpts) target
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
@@ -69,8 +69,9 @@ main = do
       printEncodingCmdLive user fullUrl
 
 
-parseVodUrl :: String -> String
-parseVodUrl = reverse . takeWhile (/= '/') . reverse
+parseVodUrl :: String -> (Bool, String)
+parseVodUrl str = let target = reverse . takeWhile (/= '/') . reverse $ str
+                  in if all isNumber target then  (True, target) else  (False, target)
 
 
 parseCmdOpts :: IO CmdOpts
@@ -81,7 +82,6 @@ parseCmdOpts = execParser $ info
     cmd = CmdOpts
       <$> strArgument         ( metavar "TARGET"             <> help targetHelpMsg                     )
       <*> strOption           ( long "quality"  <> short 'q' <> help qualityHelpMsg <> value "chunked" )
-      <*> switch              ( long "live"     <> short 'l' <> help liveHelpMsg                       )
       <*> switch              ( long "ts"       <> short 't' <> help tsHelpMsg                         )
       <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
       <*> optional (strOption ( long "end"      <> short 'e' <> help endHelpMsg                        ) )
@@ -94,7 +94,6 @@ parseCmdOpts = execParser $ info
     qualityHelpMsg = "set stream quality. default is chunked."
                      <> " chunked is source quality. ex) chunked, 720p60, 480p30"
                      <> "ex) kurl https://www.twitch.tv/videos/123456789 --quality 720p60"
-    liveHelpMsg    = "set type stream. live or archive. default is archive type"
     tsHelpMsg      = "download ts files of the vod. Supported on only archive type stream."
     startHelpMsg   = "recording start offset. Format is 0h0m0s"
                      <> "ex) kurl https://www.twitch.tv/videos/123456789 --start 30m"
