@@ -12,8 +12,10 @@ module Twitch
   ( getLive
   , getArchive
   , getChatLogs
+  , getLiveStreamList
   , VideoInfo(..)
   , StreamType(..)
+  , TwitchCfg(..)
   ) where
 
 
@@ -25,11 +27,11 @@ import qualified Data.ByteString.Char8      as CB  (pack)
 import qualified Data.ByteString.Lazy.Char8 as LB  (unpack)
 import           Data.Maybe                        (fromMaybe)
 import           Data.Text                  hiding (drop)
-import           Data.Text                  as T   (length)
+import           Data.Text                  as T   (length, intercalate)
 import           Data.Text.Encoding         as E   (encodeUtf8, decodeUtf8)
 import           Data.Time                         (NominalDiffTime)
 import           GHC.Generics                      (Generic)
-import           Network.Wreq                      (responseBody, defaults, header, param, asJSON, getWith)
+import           Network.Wreq                      (Response(..), responseBody, defaults, header, param, asJSON, getWith)
 import           Text.Printf                       (printf)
 import           System.Random                     (getStdRandom, randomR)
 
@@ -114,6 +116,68 @@ data Message = Message
   } deriving (Show, Generic)
 
 
+data FollowData = FollowData
+  { _follow_total      :: !Int
+  , _follow_data       :: [FollowEntry]
+  , _follow_pagination :: Cursor
+  } deriving (Show, Generic)
+
+
+data FollowEntry = FollowEntry
+  { _followEntry_from_id     :: !Text
+  , _followEntry_to_id       :: !Text
+  , _followEntry_followed_at :: !Text
+  } deriving (Show, Generic)
+
+
+data StreamData = StreamData
+  { _stream_data       :: [StreamEntry]
+  , _stream_pagination :: Cursor
+  } deriving (Show, Generic)
+
+
+newtype Cursor = Cursor
+  { _cursor_cursor :: Text
+  } deriving (Show, Generic)
+
+
+data StreamEntry = StreamEntry
+  { _streamEntry_id            :: Text
+  , _streamEntry_user_id       :: !Text
+  , _streamEntry_game_id       :: Text
+  , _streamEntry_community_ids :: [Text]
+  , _streamEntry_type          :: !Text
+  , _streamEntry_title         :: Text
+  , _streamEntry_viewer_count  :: Int
+  , _streamEntry_started_at    :: Text
+  , _streamEntry_language      :: Text
+  , _streamEntry_thumbnail_url :: Text
+  } deriving (Show, Generic)
+-- data Channel = Channel
+--   { _channel__id                             :: !Int
+--   , _channel_background                      :: Text
+--   , _channel_banner                          :: Text
+--   , _channel_broadcaster_language            :: Text
+--   , _channel_created_at                      :: Text
+--   , _channel_delay                           :: Text
+--   , _channel_display_name                    :: !Text
+--   , _channel_followers                       :: Int
+--   , _channel_game                            :: !Text
+--   , _channel_language                        :: Text
+--   , _channel_logo                            :: Text
+--   , _channel_mature                          :: Bool
+--   , _channel_name                            :: !Text
+--   , _channel_partner                         :: Bool
+--   , _channel_profile_banner                  :: Text
+--   , _channel_profile_banner_background_color :: Text
+--   , _channel_status                          :: !Text
+--   , _channel_updated_at                      :: Text
+--   , _channel_url                             :: !Text
+--   , _channel_video_banner                    :: Text 
+--   , _channel_views                           :: !Int
+--   } deriving (Show, Generic)
+
+
 newtype Fragment = Fragment
   { _fragment_text :: Text
   } deriving (Show, Generic)
@@ -131,17 +195,22 @@ data AccessToken = AccessToken
   } deriving (Show, Generic)
 
 
-deriveJSON defaultOptions { fieldLabelModifier = const "data"                  } ''TwitchData
-deriveJSON defaultOptions { fieldLabelModifier = const "comments"              } ''CommentData
-deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_video_")     } ''Video
-deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_user_")      } ''User
-deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_comment_")   } ''Comment
-deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_commenter_") } ''Commenter
-deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_message_")   } ''Message
-deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_fragment_")  } ''Fragment
-deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_userbadge_") } ''UserBadge
+deriveJSON defaultOptions { fieldLabelModifier = const "data"                    } ''TwitchData
+deriveJSON defaultOptions { fieldLabelModifier = const "comments"                } ''CommentData
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_video_")       } ''Video
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_user_")        } ''User
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_comment_")     } ''Comment
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_commenter_")   } ''Commenter
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_message_")     } ''Message
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_fragment_")    } ''Fragment
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_userbadge_")   } ''UserBadge
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_accesstoken_") } ''AccessToken
-
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_follow_")      } ''FollowData
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_followEntry_") } ''FollowEntry
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_cursor_")      } ''Cursor
+-- deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_channel_")     } ''Channel
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_stream_")      } ''StreamData
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_streamEntry_") } ''StreamEntry
 
 makeLenses ''TwitchData
 makeLenses ''Video
@@ -153,6 +222,12 @@ makeLenses ''Message
 makeLenses ''Fragment
 makeLenses ''UserBadge
 makeLenses ''AccessToken
+makeLenses ''FollowData
+makeLenses ''FollowEntry
+makeLenses ''Cursor
+-- makeLenses ''Channel
+makeLenses ''StreamData
+makeLenses ''StreamEntry
 
 
 data VideoInfo = VideoInfo
@@ -166,10 +241,11 @@ newtype TwitchCfg = TwitchCfg
   { twitchcfg_clientid  :: Text
   }
 
-type TwitchMonad m = (MonadIO m, MonadReader TwitchCfg m)
+type TwitchMonad m = (Monad m, MonadReader TwitchCfg m, MonadIO m)
 
 
-data ApiKind = Videos | Users
+data ApiKind = Videos | Users | Follows | Login | Streams
+
 
 data StreamType = Live | Archive
   deriving (Show)
@@ -190,25 +266,36 @@ getLive quality channelName = flip runReaderT twitchCfg $ do
 getArchive :: String -> String -> IO VideoInfo
 getArchive quality vodId = flip runReaderT twitchCfg $ do
   fullUrl <- m3u8Url Archive quality vodId
-  videos  <- twitchAPI Videos (E.decodeUtf8 . CB.pack $ vodId)
-  let userId   = videos ^?! traverse . video_user_id
-      duration = videos ^?! traverse . video_duration
-  users <- twitchAPI Users userId
-  let username =  users ^?! traverse . user_display_name
+  videos  <- twitchAPI Videos [(E.decodeUtf8 . CB.pack $ vodId)]
+  let userId   = videos ^?! twitch_data . traverse . video_user_id
+      duration = videos ^?! twitch_data . traverse . video_duration
+  users <- twitchAPI Users [userId]
+  let username =  users ^?! twitch_data . traverse . user_display_name
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) username (Just duration)
 
 
-twitchAPI :: (TwitchMonad m, FromJSON a) => ApiKind -> Text -> m [a]
-twitchAPI apiKind idParam = do
+twitchAPI :: (TwitchMonad m, FromJSON a) => ApiKind -> [Text] -> m a
+twitchAPI apiKind idParams = do
   clientId  <- reader twitchcfg_clientid
-  let url  = printf newApiFmt idParam
+  let url  = printf newApiFmt (T.intercalate queryParam idParams)
       opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+  -- liftIO $ printf "querying with => %s\n" url
   r <- liftIO $ asJSON =<< getWith opts url
-  return $ r ^. responseBody . twitch_data
+  return $ r ^. responseBody
   where
     newApiFmt = case apiKind of
-                  Videos -> "https://api.twitch.tv/helix/videos?id=%s"
-                  Users  -> "https://api.twitch.tv/helix/users?id=%s"
+                  Videos  -> "https://api.twitch.tv/helix/videos?id=%s"
+                  Users   -> "https://api.twitch.tv/helix/users?id=%s"
+                  Follows -> "https://api.twitch.tv/helix/users/follows?from_id=%s"
+                  Login   -> "https://api.twitch.tv/helix/users?login=%s"
+                  Streams -> "https://api.twitch.tv/helix/streams?user_id=%s"
+  -- for repeated query parameters eg) user_id=123?user_id=345
+    queryParam = case apiKind of
+                   Videos  -> "&id="
+                   Users   -> "&id="
+                   Follows -> "&from_id="
+                   Login   -> "&login="
+                   Streams -> "&user_id="
 
 
 m3u8Url :: TwitchMonad m => StreamType -> String -> String -> m StreamInfo
@@ -301,3 +388,27 @@ untilM a predicate next mf = do
   let a' = next a c
   cs <- if predicate a a' then return mempty else mf a'
   return $ mappend cs c
+
+
+
+-- Optional Query String Parameters
+-- Name	Type	Description
+-- limit	integer	Maximum number of most-recent objects to return. Default: 25. Maximum: 100.
+-- offset	integer	Object offset for pagination of results. Default: 0.
+-- direction	string	Sorting direction. Valid values: asc, desc. Default: desc (newest first).
+-- sortby	string	Sorting key. Valid values: created_at, last_broadcast, login. Default: created_at.
+
+getLiveStreamList :: Text -> IO [Text]
+getLiveStreamList loginName = flip runReaderT twitchCfg $ do
+  user <- twitchAPI Login [loginName]
+
+  let userId = user ^?!  twitch_data . traverse . user_id
+  followers <- twitchAPI Follows [userId]
+
+  let  followIds = followers ^.. follow_data . traverse . followEntry_to_id 
+  liveStreams <- twitchAPI Streams followIds
+
+  let liveStreamsUserIds = liveStreams ^.. stream_data . traverse . streamEntry_user_id
+  users <- twitchAPI Users liveStreamsUserIds
+
+  return $ users ^.. twitch_data . traverse . user_login

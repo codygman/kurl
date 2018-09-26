@@ -1,3 +1,5 @@
 
-* Show live streams that user followed or subscried.
-
+* Show live streams that user followed or subscried. [3/3]
+  - [X] Reader the twtich API related to this feature
+  - [X] Design the UI
+  - [X] implement feature

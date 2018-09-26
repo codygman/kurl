@@ -18,25 +18,40 @@ import           Streamly.Prelude            (fromFoldableM)
 import           M3u8                        (getStartIdx, getEndIdx,)
 import           TimeFormat                  (format4file, formatUtc, format4ffmpeg, makeOffset)
 import           TsIO                        (processM3U8, processTS, writeComments)
-import           Twitch                      (getLive, getArchive, getChatLogs, VideoInfo(..))
+import           Twitch                      (getLive, getArchive, getChatLogs, getLiveStreamList, VideoInfo(..))
 
 
 data CmdOpts = CmdOpts
-  { vodId   :: String
+  { mainArg :: String
   , quality :: String
   , ts      :: Bool
   , start   :: Maybe String
   , end     :: Maybe String
   , chat    :: Bool
-  , bare    :: Bool
+  , ffmpeg  :: Bool
+  , list    :: Bool
   }
+
+data MainCmd = Target String | List String
 
 
 main :: IO ()
 main = do
   cmdOpts <- parseCmdOpts
+  if list cmdOpts
+    then queryAction cmdOpts
+    else downloadAction cmdOpts
 
-  let (notLive, target) = parseVodUrl (vodId cmdOpts)
+
+queryAction :: CmdOpts -> IO ()
+queryAction cmdOpts = do
+  liveStreams <- getLiveStreamList (pack . mainArg $ cmdOpts)
+  mapM_ print liveStreams
+
+
+downloadAction :: CmdOpts -> IO ()
+downloadAction cmdOpts = do
+  let (notLive, target) = parseVodUrl (mainArg cmdOpts)
 
   if notLive then do
     (VideoInfo fullUrl user duration) <- getArchive (quality cmdOpts) target
@@ -44,34 +59,31 @@ main = do
         startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
         durationNominalDiff = endNominalDiff - startNominalDiff
-
-    if bare cmdOpts
-      then
-        printf "%s" fullUrl
-      else do
+    if ffmpeg cmdOpts
+      then do
         printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
         when (chat cmdOpts) $ do
-         printf "Start downloading chat...\n"
-         downloadChat target user startNominalDiff endNominalDiff
+          printf "Start downloading chat...\n"
+          downloadChat target user startNominalDiff endNominalDiff
 
         when (ts cmdOpts) $ do
           -- TODO: this is not proper file name for index-dvr.m3u8
           --       this must be extracted from full url.
           let localIndexDvrM3u8 = "index-dvr.m3u8"
           downloadVod target fullUrl startNominalDiff endNominalDiff localIndexDvrM3u8
+      else printf "%s" fullUrl
 
   else do
-    VideoInfo fullUrl user _ <- getLive (quality cmdOpts) (vodId cmdOpts)
-    if bare cmdOpts
-      then printf "%s" fullUrl
-    else
-      printEncodingCmdLive user fullUrl
+    VideoInfo fullUrl user _ <- getLive (quality cmdOpts) target
+    if ffmpeg cmdOpts
+      then printEncodingCmdLive user fullUrl
+      else printf "%s" fullUrl
 
 
 parseVodUrl :: String -> (Bool, String)
-parseVodUrl str = let target = reverse . takeWhile (/= '/') . reverse $ str
-                  in if all isNumber target then  (True, target) else  (False, target)
+parseVodUrl strInp = let target = reverse . takeWhile (/= '/') . reverse $ strInp
+                     in if all isNumber target then  (True, target) else  (False, target)
 
 
 parseCmdOpts :: IO CmdOpts
@@ -86,7 +98,8 @@ parseCmdOpts = execParser $ info
       <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
       <*> optional (strOption ( long "end"      <> short 'e' <> help endHelpMsg                        ) )
       <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
-      <*> switch              ( long "bare"     <> short 'b' <> help bareHelpMsg                         )
+      <*> switch              ( long "ffmpeg"   <> short 'f' <> help ffmpegHelpMsg                     )
+      <*> switch              ( long "list"     <> short 'l' <> help listHelpMsg                       )
     targetHelpMsg  = "When downloading live type stream, TARGET must be <channel name>."
                      <> "ex) kurl playhearthstone"
                      <> "When downloading archive type stream, TARGET must be <vod url>."
@@ -100,7 +113,8 @@ parseCmdOpts = execParser $ info
     endHelpMsg     = "recording end offset. Format is 0h0m0s"
                      <> "ex) kurl https://www.twitch.tv/videos/123456789 --end 1h2m3s"
     chatHelpMsg    = "download vod chat log. Supported on only archive type stream."
-    bareHelpMsg    = "Prints only m3u8 url. Useful for using url for otehr programs."
+    ffmpegHelpMsg  = "Prints ffmpeg command for downloading."
+    listHelpMsg    = "query current live streams which USER is following."
 
 
 downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
