@@ -46,7 +46,7 @@ main = do
 queryAction :: CmdOpts -> IO ()
 queryAction cmdOpts = do
   liveStreams <- getLiveStreamList (pack . mainArg $ cmdOpts)
-  mapM_ print liveStreams
+  mapM_ (printf "%s\n" . unpack) liveStreams
 
 
 downloadAction :: CmdOpts -> IO ()

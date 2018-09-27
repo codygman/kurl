@@ -25,13 +25,13 @@ import           Data.Aeson                        (fieldLabelModifier, defaultO
 import           Data.Aeson.TH                     (deriveJSON)
 import qualified Data.ByteString.Char8      as CB  (pack)
 import qualified Data.ByteString.Lazy.Char8 as LB  (unpack)
-import           Data.Maybe                        (fromMaybe)
+import           Data.Maybe                        (fromMaybe, isNothing, maybe)
 import           Data.Text                  hiding (drop)
 import           Data.Text                  as T   (length, intercalate)
 import           Data.Text.Encoding         as E   (encodeUtf8, decodeUtf8)
 import           Data.Time                         (NominalDiffTime)
 import           GHC.Generics                      (Generic)
-import           Network.Wreq                      (Response(..), responseBody, defaults, header, param, asJSON, getWith)
+import           Network.Wreq                      (responseBody, defaults, header, param, asJSON, getWith)
 import           Text.Printf                       (printf)
 import           System.Random                     (getStdRandom, randomR)
 
@@ -119,7 +119,7 @@ data Message = Message
 data FollowData = FollowData
   { _follow_total      :: !Int
   , _follow_data       :: [FollowEntry]
-  , _follow_pagination :: Cursor
+  , _follow_pagination :: Pagination
   } deriving (Show, Generic)
 
 
@@ -132,12 +132,12 @@ data FollowEntry = FollowEntry
 
 data StreamData = StreamData
   { _stream_data       :: [StreamEntry]
-  , _stream_pagination :: Cursor
+  , _stream_pagination :: Pagination
   } deriving (Show, Generic)
 
 
-newtype Cursor = Cursor
-  { _cursor_cursor :: Text
+newtype Pagination = Pagination
+  { _pagination_cursor :: Maybe Text
   } deriving (Show, Generic)
 
 
@@ -207,7 +207,7 @@ deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_userbadge_")  
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_accesstoken_") } ''AccessToken
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_follow_")      } ''FollowData
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_followEntry_") } ''FollowEntry
-deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_cursor_")      } ''Cursor
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_pagination_")  } ''Pagination
 -- deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_channel_")     } ''Channel
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_stream_")      } ''StreamData
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_streamEntry_") } ''StreamEntry
@@ -224,7 +224,7 @@ makeLenses ''UserBadge
 makeLenses ''AccessToken
 makeLenses ''FollowData
 makeLenses ''FollowEntry
-makeLenses ''Cursor
+makeLenses ''Pagination
 -- makeLenses ''Channel
 makeLenses ''StreamData
 makeLenses ''StreamEntry
@@ -266,19 +266,20 @@ getLive quality channelName = flip runReaderT twitchCfg $ do
 getArchive :: String -> String -> IO VideoInfo
 getArchive quality vodId = flip runReaderT twitchCfg $ do
   fullUrl <- m3u8Url Archive quality vodId
-  videos  <- twitchAPI Videos [(E.decodeUtf8 . CB.pack $ vodId)]
+  videos  <- twitchAPI Videos Nothing [(E.decodeUtf8 . CB.pack $ vodId)]
   let userId   = videos ^?! twitch_data . traverse . video_user_id
       duration = videos ^?! twitch_data . traverse . video_duration
-  users <- twitchAPI Users [userId]
+  users <- twitchAPI Users Nothing [userId]
   let username =  users ^?! twitch_data . traverse . user_display_name
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) username (Just duration)
 
 
-twitchAPI :: (TwitchMonad m, FromJSON a) => ApiKind -> [Text] -> m a
-twitchAPI apiKind idParams = do
+twitchAPI :: (TwitchMonad m, FromJSON a) => ApiKind -> Maybe Text -> [Text] -> m a
+twitchAPI apiKind cursor idParams = do
   clientId  <- reader twitchcfg_clientid
-  let url  = printf newApiFmt (T.intercalate queryParam idParams)
-      opts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+  let cursorParam = maybe "" (printf "&after=%s") cursor
+      url         = printf newApiFmt (T.intercalate queryParam idParams) <> cursorParam
+      opts        = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
   -- liftIO $ printf "querying with => %s\n" url
   r <- liftIO $ asJSON =<< getWith opts url
   return $ r ^. responseBody
@@ -379,7 +380,6 @@ getChatLogs vodId startNominalDiff endNominalDiff = flip runReaderT twitchCfg $ 
     ssec = (fromIntegral . fromEnum $ startNominalDiff) / picoPrecision
     esec = (fromIntegral . fromEnum $ endNominalDiff)   / picoPrecision
 
-
 -- Doing monadic operation until predicate returns true
 -- untilM initialValue predicate nextValue monadicAction
 untilM :: forall m a b. (Monad m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
@@ -390,25 +390,44 @@ untilM a predicate next mf = do
   return $ mappend cs c
 
 
-
--- Optional Query String Parameters
--- Name	Type	Description
--- limit	integer	Maximum number of most-recent objects to return. Default: 25. Maximum: 100.
--- offset	integer	Object offset for pagination of results. Default: 0.
--- direction	string	Sorting direction. Valid values: asc, desc. Default: desc (newest first).
--- sortby	string	Sorting key. Valid values: created_at, last_broadcast, login. Default: created_at.
-
 getLiveStreamList :: Text -> IO [Text]
 getLiveStreamList loginName = flip runReaderT twitchCfg $ do
-  user <- twitchAPI Login [loginName]
+   getFollowers loginName
+     >>= getStreams
+     >>= getUserLoginName
 
+
+getFollowers :: (TwitchMonad m) => Text -> m [Text]
+getFollowers loginName = do
+  user <- twitchAPI Login Nothing [loginName]
   let userId = user ^?!  twitch_data . traverse . user_id
-  followers <- twitchAPI Follows [userId]
+  getFollowers' userId Nothing []
+  where
+    getFollowers' uid cursor acc = do
+      followers  <- twitchAPI Follows cursor [uid]
+      let to_ids  = followers ^.. follow_data . traverse . followEntry_to_id
+          acc'    = to_ids ++ acc
+          cursor' = followers ^. follow_pagination . pagination_cursor
+      if followers ^. follow_total <= Prelude.length acc'
+        then return $ acc'
+        else getFollowers' uid cursor' acc'
 
-  let  followIds = followers ^.. follow_data . traverse . followEntry_to_id 
-  liveStreams <- twitchAPI Streams followIds
 
-  let liveStreamsUserIds = liveStreams ^.. stream_data . traverse . streamEntry_user_id
-  users <- twitchAPI Users liveStreamsUserIds
+getStreams :: (TwitchMonad m) => [Text] -> m [Text]
+getStreams ids = do
+  getStreams' Nothing []
+  where
+    getStreams' cursor acc = do
+      liveStreams <- twitchAPI Streams cursor ids
+      let livestream_ids = liveStreams ^.. stream_data . traverse . streamEntry_user_id
+          acc'    = livestream_ids  ++ acc
+          cursor' = liveStreams ^. stream_pagination . pagination_cursor
+      if isNothing cursor'
+        then return $ acc'
+        else getStreams' cursor' acc'
 
+
+getUserLoginName :: (TwitchMonad m) => [Text] -> m [Text]
+getUserLoginName ids = do
+  users <- twitchAPI Users Nothing ids
   return $ users ^.. twitch_data . traverse . user_login
