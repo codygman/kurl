@@ -13,6 +13,7 @@ module Twitch
   , getArchive
   , getChatLogs
   , getLiveStreamList
+  , isHosting
   , VideoInfo(..)
   , StreamType(..)
   , TwitchCfg(..)
@@ -31,7 +32,7 @@ import           Data.Text                  as T   (length, intercalate)
 import           Data.Text.Encoding         as E   (encodeUtf8, decodeUtf8)
 import           Data.Time                         (NominalDiffTime)
 import           GHC.Generics                      (Generic)
-import           Network.Wreq                      (responseBody, defaults, header, param, asJSON, getWith)
+import           Network.Wreq                      (responseBody, defaults, header, param, asJSON, getWith, get)
 import           Text.Printf                       (printf)
 import           System.Random                     (getStdRandom, randomR)
 
@@ -178,6 +179,29 @@ data StreamEntry = StreamEntry
 --   } deriving (Show, Generic)
 
 
+data HostingData = HostingData
+  { _hosting_hosts :: [HostingEntry]
+  } deriving (Show, Generic)
+
+
+data HostingEntry = HostingEntry
+  { _hostingEntry_host_id             :: Int
+  , _hostingEntry_host_login          :: Text
+  , _hostingEntry_host_display_name   :: Text
+  , _hostingEntry_target_id           :: Maybe Int
+  , _hostingEntry_target_login        :: Maybe Text
+  , _hostingEntry_target_display_name :: Maybe Text
+  } deriving (Show, Generic)
+-- {
+--   "hosts": [
+--     {
+--       "host_id": 51684790,
+--       "host_login": "modesttim",
+--       "host_display_name": "ModestTim"
+--     }
+--   ]
+-- }
+
 newtype Fragment = Fragment
   { _fragment_text :: Text
   } deriving (Show, Generic)
@@ -211,6 +235,9 @@ deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_pagination_") 
 -- deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_channel_")     } ''Channel
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_stream_")      } ''StreamData
 deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_streamEntry_") } ''StreamEntry
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_hosting_")      } ''HostingData
+deriveJSON defaultOptions { fieldLabelModifier = drop (T.length "_hostingEntry_") } ''HostingEntry
+
 
 makeLenses ''TwitchData
 makeLenses ''Video
@@ -228,6 +255,8 @@ makeLenses ''Pagination
 -- makeLenses ''Channel
 makeLenses ''StreamData
 makeLenses ''StreamEntry
+makeLenses ''HostingData
+makeLenses ''HostingEntry
 
 
 data VideoInfo = VideoInfo
@@ -409,7 +438,7 @@ getFollowers loginName = do
           acc'    = to_ids ++ acc
           cursor' = followers ^. follow_pagination . pagination_cursor
       if followers ^. follow_total <= Prelude.length acc'
-        then return $ acc'
+        then return acc'
         else getFollowers' uid cursor' acc'
 
 
@@ -423,7 +452,7 @@ getStreams ids = do
           acc'    = livestream_ids  ++ acc
           cursor' = liveStreams ^. stream_pagination . pagination_cursor
       if isNothing cursor'
-        then return $ acc'
+        then return acc'
         else getStreams' cursor' acc'
 
 
@@ -431,3 +460,23 @@ getUserLoginName :: (TwitchMonad m) => [Text] -> m [Text]
 getUserLoginName ids = do
   users <- twitchAPI Users Nothing ids
   return $ users ^.. twitch_data . traverse . user_login
+
+
+
+isHosting :: Text -> IO [HostingEntry]
+isHosting loginName = flip runReaderT twitchCfg $ do
+  users <- twitchAPI Login Nothing [loginName]
+  let userId = users ^?! twitch_data . traverse . user_id
+  hosting <- unsupportedTwitchAPI userId
+  return $ hosting ^. hosting_hosts
+
+
+-- api which is checking that stream hosting other channel is `unsupported feature` for now.
+unsupportedTwitchAPI :: (TwitchMonad m, FromJSON a) => Text -> m a
+unsupportedTwitchAPI idParam = do
+  let url         = printf unsupportedApiFmt idParam
+  -- liftIO $ printf "querying with => %s\n" url
+  r <- liftIO $ asJSON =<< get url
+  return $ r ^. responseBody
+  where
+    unsupportedApiFmt = "https://tmi.twitch.tv/hosts?include_logins=1&host=%s" 
