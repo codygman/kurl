@@ -3,3 +3,6 @@
   - [X] Reader the twtich API related to this feature
   - [X] Design the UI
   - [X] implement feature
+
+* TOOD Bugfix [0/1]
+ - [ ] filter out hosting livestream from live stream list.
