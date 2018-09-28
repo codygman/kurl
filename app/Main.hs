@@ -88,9 +88,13 @@ downloadAction cmdOpts = do
       else printf "%s" fullUrl
 
 
+-- TODO: There's user name only consisted with numbers.
+--       How we can differentiate with vod and channel name?
 parseVodUrl :: String -> (Bool, String)
 parseVodUrl strInp = let target = reverse . takeWhile (/= '/') . reverse $ strInp
-                     in if all isNumber target then  (True, target) else  (False, target)
+                     in if all isNumber target
+                          then  (True, target)
+                          else  (False, target)
 
 
 parseCmdOpts :: IO CmdOpts
