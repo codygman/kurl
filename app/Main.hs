@@ -7,6 +7,7 @@ module Main where
 import           Control.Monad               (when)
 import           Data.Char                   (isNumber)
 import           Data.Maybe                  (fromJust, fromMaybe, isJust)
+import           Data.List                   (isPrefixOf)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
 import           Options.Applicative
@@ -90,9 +91,10 @@ downloadAction cmdOpts = do
 
 -- TODO: There's user name only consisted with numbers.
 --       How we can differentiate with vod and channel name?
+--  FIX: Just don't accept target input which only consisted with numbers as vod id.
 parseVodUrl :: String -> (Bool, String)
 parseVodUrl strInp = let target = reverse . takeWhile (/= '/') . reverse $ strInp
-                     in if all isNumber target
+                     in if all isNumber target && "https://www.twitch.tv/videos" `isPrefixOf` strInp
                           then  (True, target)
                           else  (False, target)
 
