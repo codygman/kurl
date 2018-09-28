@@ -4,5 +4,9 @@
   - [X] Design the UI
   - [X] implement feature
 
-* TOOD Bugfix [0/1]
- - [ ] filter out hosting livestream from live stream list.
+* TODO Bugfix [0/1]
+ - [ ] Filter out hosting livestream from live stream list.
+
+* TODO Feature [0/1]
+ - [ ] Download clips
+
