@@ -6,7 +6,7 @@ module Main where
 
 import           Control.Monad               (when)
 import           Data.Char                   (isNumber)
-import           Data.Maybe                  (fromJust, fromMaybe)
+import           Data.Maybe                  (fromJust, fromMaybe, isJust)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
 import           Options.Applicative
@@ -22,7 +22,7 @@ import           Twitch                      (getLive, getArchive, getChatLogs, 
 
 
 data CmdOpts = CmdOpts
-  { mainArg :: String
+  { mainArg :: Maybe String
   , quality :: String
   , ts      :: Bool
   , start   :: Maybe String
@@ -30,6 +30,7 @@ data CmdOpts = CmdOpts
   , chat    :: Bool
   , ffmpeg  :: Bool
   , list    :: Bool
+  , version :: Bool
   }
 
 data MainCmd = Target String | List String
@@ -38,20 +39,26 @@ data MainCmd = Target String | List String
 main :: IO ()
 main = do
   cmdOpts <- parseCmdOpts
-  if list cmdOpts
-    then queryAction cmdOpts
-    else downloadAction cmdOpts
+  if version cmdOpts
+    then printf "kurl 1.2\n"
+    else if isJust . mainArg $ cmdOpts
+           then
+             if list cmdOpts
+               then queryAction cmdOpts
+               else downloadAction cmdOpts
+           else
+             printf "Missing TARGET\n"
 
 
 queryAction :: CmdOpts -> IO ()
 queryAction cmdOpts = do
-  liveStreams <- getLiveStreamList (pack . mainArg $ cmdOpts)
+  liveStreams <- getLiveStreamList (pack . fromJust . mainArg $ cmdOpts)
   mapM_ (printf "%s\n" . unpack) liveStreams
 
 
 downloadAction :: CmdOpts -> IO ()
 downloadAction cmdOpts = do
-  let (notLive, target) = parseVodUrl (mainArg cmdOpts)
+  let (notLive, target) = parseVodUrl (fromJust . mainArg $cmdOpts)
 
   if notLive then do
     (VideoInfo fullUrl user duration) <- getArchive (quality cmdOpts) target
@@ -92,7 +99,7 @@ parseCmdOpts = execParser $ info
                                  <> header "kurl - a twitch vod downloader" )
   where
     cmd = CmdOpts
-      <$> strArgument         ( metavar "TARGET"             <> help targetHelpMsg                     )
+      <$> optional (strArgument         ( metavar "TARGET"             <> help targetHelpMsg                     ))
       <*> strOption           ( long "quality"  <> short 'q' <> help qualityHelpMsg <> value "chunked" )
       <*> switch              ( long "ts"       <> short 't' <> help tsHelpMsg                         )
       <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
@@ -100,6 +107,7 @@ parseCmdOpts = execParser $ info
       <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
       <*> switch              ( long "ffmpeg"   <> short 'f' <> help ffmpegHelpMsg                     )
       <*> switch              ( long "list"     <> short 'l' <> help listHelpMsg                       )
+      <*> switch              ( long "version"  <> short 'v' <> help versionHelpMsg                    )
     targetHelpMsg  = " When downloading live type stream, TARGET must be \
                      \ <channel name>. ex) kurl playhearthstone.         \
                      \ When downloading archive type stream, TARGET must \
@@ -115,6 +123,7 @@ parseCmdOpts = execParser $ info
     chatHelpMsg    = "download vod chat log. Supported on only archive type stream."
     ffmpegHelpMsg  = "Prints ffmpeg command for downloading."
     listHelpMsg    = "query current live streams which USER is following."
+    versionHelpMsg = "prints current kurl version."
 
 
 downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
