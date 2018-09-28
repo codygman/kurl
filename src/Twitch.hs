@@ -21,11 +21,13 @@ module Twitch
 
 
 import           Control.Lens
+import           Control.Monad                     (foldM)
 import           Control.Monad.Reader              (MonadIO, MonadReader, runReaderT, reader, liftIO)
 import           Data.Aeson                        (fieldLabelModifier, defaultOptions, FromJSON)
 import           Data.Aeson.TH                     (deriveJSON)
 import qualified Data.ByteString.Char8      as CB  (pack)
 import qualified Data.ByteString.Lazy.Char8 as LB  (unpack)
+import           Data.List.Split            as LS  (chunksOf)
 import           Data.Maybe                        (fromMaybe, isNothing, maybe)
 import           Data.Text                  hiding (drop)
 import           Data.Text                  as T   (length, intercalate)
@@ -192,15 +194,7 @@ data HostingEntry = HostingEntry
   , _hostingEntry_target_login        :: Maybe Text
   , _hostingEntry_target_display_name :: Maybe Text
   } deriving (Show, Generic)
--- {
---   "hosts": [
---     {
---       "host_id": 51684790,
---       "host_login": "modesttim",
---       "host_display_name": "ModestTim"
---     }
---   ]
--- }
+
 
 newtype Fragment = Fragment
   { _fragment_text :: Text
@@ -309,7 +303,7 @@ twitchAPI apiKind cursor idParams = do
   let cursorParam = maybe "" (printf "&after=%s") cursor
       url         = printf newApiFmt (T.intercalate queryParam idParams) <> cursorParam
       opts        = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
-  -- liftIO $ printf "querying with => %s\n" url
+  -- liftIO $ printf "querying with => %s...\n" (Prelude.take 100 url)
   r <- liftIO $ asJSON =<< getWith opts url
   return $ r ^. responseBody
   where
@@ -444,22 +438,33 @@ getFollowers loginName = do
 
 getStreams :: (TwitchMonad m) => [Text] -> m [Text]
 getStreams ids = do
-  getStreams' Nothing []
+  foldM (\acc ids -> (acc ++) <$> getStreams' Nothing [] ids) [] groupOfFollowIds
   where
-    getStreams' cursor acc = do
+    -- 100 is the limit of multiple repeat of input parameter of user_id or user_login
+    paramRepeatLimit = 100
+    groupOfFollowIds = LS.chunksOf paramRepeatLimit ids
+    getStreams' :: (TwitchMonad m) => Maybe Text -> [Text] -> [Text] -> m [Text]
+    getStreams' cursor acc ids = do
       liveStreams <- twitchAPI Streams cursor ids
       let livestream_ids = liveStreams ^.. stream_data . traverse . streamEntry_user_id
           acc'    = livestream_ids  ++ acc
           cursor' = liveStreams ^. stream_pagination . pagination_cursor
       if isNothing cursor'
         then return acc'
-        else getStreams' cursor' acc'
+        else getStreams' cursor' acc' ids
+
 
 
 getUserLoginName :: (TwitchMonad m) => [Text] -> m [Text]
 getUserLoginName ids = do
-  users <- twitchAPI Users Nothing ids
-  return $ users ^.. twitch_data . traverse . user_login
+  foldM (\acc ids -> (acc ++) <$> getUserLoginName' ids) [] groupOfUserIds
+  where
+    paramRepeatLimit = 100
+    groupOfUserIds = LS.chunksOf paramRepeatLimit ids
+    getUserLoginName' :: (TwitchMonad m) => [Text] -> m [Text]
+    getUserLoginName' ids' = do
+      users <- twitchAPI Users Nothing ids'
+      return $ users ^.. twitch_data . traverse . user_login
 
 
 
