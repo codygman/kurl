@@ -17,28 +17,62 @@ module Twitch
   , VideoInfo(..)
   , StreamType(..)
   , TwitchCfg(..)
-  ) where
+  )
+where
 
 
 import           Control.Lens
-import           Control.Monad                     (foldM)
-import           Control.Monad.Reader              (MonadIO, MonadReader, runReaderT, reader, liftIO)
-import           Data.Aeson                        (fieldLabelModifier, defaultOptions, FromJSON)
-import           Data.Aeson.TH                     (deriveJSON)
-import qualified Data.ByteString.Char8      as CB  (pack)
-import qualified Data.ByteString.Lazy.Char8 as LB  (unpack)
-import           Data.List.Split            as LS  (chunksOf)
-import           Data.Maybe                        (fromMaybe, isNothing, maybe)
-import           Data.Text                  hiding (drop)
-import           Data.Text                  as T   (length, intercalate)
-import           Data.Text.Encoding         as E   (encodeUtf8, decodeUtf8)
-import           Data.Time                         (NominalDiffTime)
-import           GHC.Generics                      (Generic)
-import           Network.Wreq                      (responseBody, defaults, header, param, asJSON, getWith, get)
-import           Text.Printf                       (printf)
-import           System.Random                     (getStdRandom, randomR)
+import           Control.Monad                            ( foldM )
+import           Control.Monad.Reader                     ( MonadIO
+                                                          , MonadReader
+                                                          , runReaderT
+                                                          , reader
+                                                          , liftIO
+                                                          )
+import           Data.Aeson                               ( fieldLabelModifier
+                                                          , defaultOptions
+                                                          , FromJSON
+                                                          )
+import           Data.Aeson.TH                            ( deriveJSON )
+import qualified Data.ByteString.Char8         as CB
+                                                          ( pack )
+import qualified Data.ByteString.Lazy.Char8    as LB
+                                                          ( unpack )
+import           Data.List.Split               as LS
+                                                          ( chunksOf )
+import           Data.Maybe                               ( fromMaybe
+                                                          , isNothing
+                                                          , maybe
+                                                          )
+import           Data.Text                     as T
+                                                          ( length
+                                                          , intercalate
+                                                          )
+import           Data.Text                         hiding ( drop )
+import           Data.Text.Encoding            as E
+                                                          ( encodeUtf8
+                                                          , decodeUtf8
+                                                          )
+import           Data.Time                                ( NominalDiffTime )
+import           GHC.Generics                             ( Generic )
+import           Network.Wreq                             ( responseBody
+                                                          , defaults
+                                                          , header
+                                                          , param
+                                                          , asJSON
+                                                          , getWith
+                                                          , get
+                                                          )
+import           System.Random                            ( getStdRandom
+                                                          , randomR
+                                                          )
+import           Text.Printf                              ( printf )
 
-import           M3u8                              (StreamInfo, streaminfo_quality, streaminfo_url, parseM3u8)
+import           M3u8                                     ( StreamInfo
+                                                          , streaminfo_quality
+                                                          , streaminfo_url
+                                                          , parseM3u8
+                                                          )
 
 
 newtype TwitchData a = TwitchData
@@ -283,7 +317,9 @@ twitchCfg = TwitchCfg "g9r0psjr0nn0a4ypjh62b6p568jhom"  -- cliendId
 getLive :: String -> String -> IO VideoInfo
 getLive quality channelName = flip runReaderT twitchCfg $ do
   fullUrl <- m3u8Url Live quality channelName
-  return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) (pack channelName) Nothing
+  return $ VideoInfo (fullUrl ^. streaminfo_url . to pack)
+                     (pack channelName)
+                     Nothing
 
 
 getArchive :: String -> String -> IO VideoInfo
@@ -293,119 +329,154 @@ getArchive quality vodId = flip runReaderT twitchCfg $ do
   let userId   = videos ^?! twitch_data . traverse . video_user_id
       duration = videos ^?! twitch_data . traverse . video_duration
   users <- twitchAPI Users Nothing [userId]
-  let username =  users ^?! twitch_data . traverse . user_display_name
-  return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) username (Just duration)
+  let username = users ^?! twitch_data . traverse . user_display_name
+  return
+    $ VideoInfo (fullUrl ^. streaminfo_url . to pack) username (Just duration)
 
 
-twitchAPI :: (TwitchMonad m, FromJSON a) => ApiKind -> Maybe Text -> [Text] -> m a
+twitchAPI
+  :: (TwitchMonad m, FromJSON a) => ApiKind -> Maybe Text -> [Text] -> m a
 twitchAPI apiKind cursor idParams = do
-  clientId  <- reader twitchcfg_clientid
+  clientId <- reader twitchcfg_clientid
   let cursorParam = maybe "" (printf "&after=%s") cursor
-      url         = printf newApiFmt (T.intercalate queryParam idParams) <> cursorParam
-      opts        = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+      url = printf newApiFmt (T.intercalate queryParam idParams) <> cursorParam
+      opts = defaults & header "Client-ID" .~ [E.encodeUtf8 clientId]
   -- liftIO $ printf "querying with => %s...\n" (Prelude.take 100 url)
   r <- liftIO $ asJSON =<< getWith opts url
   return $ r ^. responseBody
-  where
-    newApiFmt = case apiKind of
-                  Videos  -> "https://api.twitch.tv/helix/videos?id=%s"
-                  Users   -> "https://api.twitch.tv/helix/users?id=%s"
-                  Follows -> "https://api.twitch.tv/helix/users/follows?from_id=%s"
-                  Login   -> "https://api.twitch.tv/helix/users?login=%s"
-                  Streams -> "https://api.twitch.tv/helix/streams?user_id=%s"
-  -- for repeated query parameters eg) user_id=123?user_id=345
-    queryParam = case apiKind of
-                   Videos  -> "&id="
-                   Users   -> "&id="
-                   Follows -> "&from_id="
-                   Login   -> "&login="
-                   Streams -> "&user_id="
+ where
+  newApiFmt = case apiKind of
+    Videos  -> "https://api.twitch.tv/helix/videos?id=%s"
+    Users   -> "https://api.twitch.tv/helix/users?id=%s"
+    Follows -> "https://api.twitch.tv/helix/users/follows?from_id=%s"
+    Login   -> "https://api.twitch.tv/helix/users?login=%s"
+    Streams -> "https://api.twitch.tv/helix/streams?user_id=%s"
+-- for repeated query parameters eg) user_id=123?user_id=345
+  queryParam = case apiKind of
+    Videos  -> "&id="
+    Users   -> "&id="
+    Follows -> "&from_id="
+    Login   -> "&login="
+    Streams -> "&user_id="
 
 
 m3u8Url :: TwitchMonad m => StreamType -> String -> String -> m StreamInfo
 m3u8Url streamType streamQuality target = do
-  let  errFmt = "Twitch: There's no stream which has the type: %s and quality: %s"
+  let errFmt =
+        "Twitch: There's no stream which has the type: %s and quality: %s"
   m3u8Entry target >>= \case
-    Nothing   -> error $ printf errFmt (show streamType) streamQuality
-    Just  url -> return url
-  where
-    m3u8Entry loginUserOrVodId = do
-      accessToken <- getAccessToken streamType loginUserOrVodId
-      m3u8        <- m3u8Content streamType loginUserOrVodId accessToken
-      return $ findOf folded ((== streamQuality) . view streaminfo_quality) (parseM3u8 m3u8)
+    Nothing  -> error $ printf errFmt (show streamType) streamQuality
+    Just url -> return url
+ where
+  m3u8Entry loginUserOrVodId = do
+    accessToken <- getAccessToken streamType loginUserOrVodId
+    m3u8        <- m3u8Content streamType loginUserOrVodId accessToken
+    return $ findOf folded
+                    ((== streamQuality) . view streaminfo_quality)
+                    (parseM3u8 m3u8)
 
 
 m3u8Content :: TwitchMonad m => StreamType -> String -> AccessToken -> m String
 m3u8Content streamType loginUserOrVodId accessToken = do
-  clientId  <- reader twitchcfg_clientid
-  rnd <- liftIO $ getStdRandom (randomR (1, 99999 :: Int))
+  clientId <- reader twitchcfg_clientid
+  rnd      <- liftIO $ getStdRandom (randomR (1, 99999 :: Int))
   let token     = accessToken ^. accesstoken_token
       sig       = accessToken ^. accesstoken_sig
       url       = printf m3u8Fmt loginUserOrVodId
       randomInt = printf "%d" rnd
-      m3u8Opts  = defaults & header "Client-ID"        .~ [ E.encodeUtf8 clientId ]
-                           & param  "player"           .~ [ "twitchweb"           ]
-                           & param  "token"            .~ [ token                 ]
-                           & param  "sig"              .~ [ sig                   ]
-                           & param  "allow_audio_only" .~ [ "true"                ]
-                           & param  "allow_source"     .~ [ "true"                ]
-                           & param  "type"             .~ [ "any"                 ]
-                           & param  "p"                .~ [ pack randomInt        ]
+      m3u8Opts =
+        defaults
+          &  header "Client-ID"
+          .~ [E.encodeUtf8 clientId]
+          &  param "player"
+          .~ ["twitchweb"]
+          &  param "token"
+          .~ [token]
+          &  param "sig"
+          .~ [sig]
+          &  param "allow_audio_only"
+          .~ ["true"]
+          &  param "allow_source"
+          .~ ["true"]
+          &  param "type"
+          .~ ["any"]
+          &  param "p"
+          .~ [pack randomInt]
   resp <- liftIO $ getWith m3u8Opts url
   return $ resp ^. responseBody . to LB.unpack
-  where
-    archFmt = "https://usher.ttvnw.net/vod/%s.m3u8"
-    liveFmt = "https://usher.ttvnw.net/api/channel/hls/%s.m3u8"
-    m3u8Fmt = case streamType of
-                Live    -> liveFmt
-                Archive -> archFmt
+ where
+  archFmt = "https://usher.ttvnw.net/vod/%s.m3u8"
+  liveFmt = "https://usher.ttvnw.net/api/channel/hls/%s.m3u8"
+  m3u8Fmt = case streamType of
+    Live    -> liveFmt
+    Archive -> archFmt
 
 
 getAccessToken :: TwitchMonad m => StreamType -> String -> m AccessToken
 getAccessToken streamType loginUserOrVodId = do
   clientId <- reader twitchcfg_clientid
-  let tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
+  let tokenOpts = defaults & header "Client-ID" .~ [E.encodeUtf8 clientId]
       tokenUrl  = printf tokenFmt loginUserOrVodId
   resp <- liftIO $ asJSON =<< getWith tokenOpts tokenUrl
   return $ resp ^. responseBody
-  where
-    archFmt  = "https://api.twitch.tv/api/vods/%s/access_token"
-    liveFmt  = "https://api.twitch.tv/api/channels/%s/access_token"
-    tokenFmt = case streamType of
-                 Live    -> liveFmt
-                 Archive -> archFmt
+ where
+  archFmt  = "https://api.twitch.tv/api/vods/%s/access_token"
+  liveFmt  = "https://api.twitch.tv/api/channels/%s/access_token"
+  tokenFmt = case streamType of
+    Live    -> liveFmt
+    Archive -> archFmt
 
 
 chatLogOffset :: TwitchMonad m => String -> Float -> m [Comment]
 chatLogOffset vodId offset = do
   clientId <- reader twitchcfg_clientid
-  let url  = printf v5ApiFmt vodId offset
-      opts = defaults & header "Client-ID"    .~ [ E.encodeUtf8 clientId              ]
-                      & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
+  let url = printf v5ApiFmt vodId offset
+      opts =
+        defaults
+          &  header "Client-ID"
+          .~ [E.encodeUtf8 clientId]
+          &  header "Content-Type"
+          .~ ["application/vnd.twitchtv.v5+json"]
   resp <- liftIO $ asJSON =<< getWith opts url
   return $ resp ^. responseBody . comment_data
-  where
-    v5ApiFmt = "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f"
+ where
+  v5ApiFmt =
+    "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f"
 
 
-getChatLogs :: String -> NominalDiffTime -> NominalDiffTime -> IO [(Text, Text, Text)]
-getChatLogs vodId startNominalDiff endNominalDiff = flip runReaderT twitchCfg $ do
-  comments <- untilM ssec
-                (\csec nsec -> nsec == csec || nsec > esec)
-                (\csec comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
-                (\csec -> liftIO (printf "downloading chat comment from %f seconds\n" csec) >> chatLogOffset vodId csec)
-  let time = Getter comment_created_at
-      name = Getter $ comment_commenter . commenter_display_name
-      mesg = Getter $ comment_message . message_body
-  return $ comments ^.. traverse . runGetter ((,,) <$> time <*> name <*> mesg)
-  where
-    picoPrecision = 10**12
-    ssec = (fromIntegral . fromEnum $ startNominalDiff) / picoPrecision
-    esec = (fromIntegral . fromEnum $ endNominalDiff)   / picoPrecision
+getChatLogs
+  :: String -> NominalDiffTime -> NominalDiffTime -> IO [(Text, Text, Text)]
+getChatLogs vodId startNominalDiff endNominalDiff =
+  flip runReaderT twitchCfg $ do
+    comments <- untilM
+      ssec
+      (\csec nsec -> nsec == csec || nsec > esec)
+      (\csec comments -> fromMaybe csec $ comments & lastOf
+        (traverse . comment_content_offset_seconds)
+      )
+      (\csec ->
+        liftIO (printf "downloading chat comment from %f seconds\n" csec)
+          >> chatLogOffset vodId csec
+      )
+    let time = Getter comment_created_at
+        name = Getter $ comment_commenter . commenter_display_name
+        mesg = Getter $ comment_message . message_body
+    return $ comments ^.. traverse . runGetter ((,,) <$> time <*> name <*> mesg)
+ where
+  picoPrecision = 10 ** 12
+  ssec          = (fromIntegral . fromEnum $ startNominalDiff) / picoPrecision
+  esec          = (fromIntegral . fromEnum $ endNominalDiff) / picoPrecision
 
 -- Doing monadic operation until predicate returns true
 -- untilM initialValue predicate nextValue monadicAction
-untilM :: forall m a b. (Monad m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
+untilM
+  :: forall m a b
+   . (Monad m)
+  => a
+  -> (a -> a -> Bool)
+  -> (a -> [b] -> a)
+  -> (a -> m [b])
+  -> m [b]
 untilM a predicate next mf = do
   c <- mf a
   let a' = next a c
@@ -415,56 +486,55 @@ untilM a predicate next mf = do
 
 getLiveStreamList :: Text -> IO [Text]
 getLiveStreamList loginName = flip runReaderT twitchCfg $ do
-   getFollowers loginName
-     >>= getStreams
-     >>= getUserLoginName
+  getFollowers loginName >>= getStreams >>= getUserLoginName
 
 
 getFollowers :: (TwitchMonad m) => Text -> m [Text]
 getFollowers loginName = do
   user <- twitchAPI Login Nothing [loginName]
-  let userId = user ^?!  twitch_data . traverse . user_id
+  let userId = user ^?! twitch_data . traverse . user_id
   getFollowers' userId Nothing []
-  where
-    getFollowers' uid cursor acc = do
-      followers  <- twitchAPI Follows cursor [uid]
-      let to_ids  = followers ^.. follow_data . traverse . followEntry_to_id
-          acc'    = to_ids ++ acc
-          cursor' = followers ^. follow_pagination . pagination_cursor
-      if followers ^. follow_total <= Prelude.length acc'
-        then return acc'
-        else getFollowers' uid cursor' acc'
+ where
+  getFollowers' uid cursor acc = do
+    followers <- twitchAPI Follows cursor [uid]
+    let to_ids  = followers ^.. follow_data . traverse . followEntry_to_id
+        acc'    = to_ids ++ acc
+        cursor' = followers ^. follow_pagination . pagination_cursor
+    if followers ^. follow_total <= Prelude.length acc'
+      then return acc'
+      else getFollowers' uid cursor' acc'
 
 
 getStreams :: (TwitchMonad m) => [Text] -> m [Text]
 getStreams ids = do
-  foldM (\acc ids -> (acc ++) <$> getStreams' Nothing [] ids) [] groupOfFollowIds
-  where
+  foldM (\acc ids -> (acc ++) <$> getStreams' Nothing [] ids)
+        []
+        groupOfFollowIds
+ where
     -- 100 is the limit of multiple repeat of input parameter of user_id or user_login
-    paramRepeatLimit = 100
-    groupOfFollowIds = LS.chunksOf paramRepeatLimit ids
-    getStreams' :: (TwitchMonad m) => Maybe Text -> [Text] -> [Text] -> m [Text]
-    getStreams' cursor acc ids = do
-      liveStreams <- twitchAPI Streams cursor ids
-      let livestream_ids = liveStreams ^.. stream_data . traverse . streamEntry_user_id
-          acc'    = livestream_ids  ++ acc
-          cursor' = liveStreams ^. stream_pagination . pagination_cursor
-      if isNothing cursor'
-        then return acc'
-        else getStreams' cursor' acc' ids
+  paramRepeatLimit = 100
+  groupOfFollowIds = LS.chunksOf paramRepeatLimit ids
+  getStreams' :: (TwitchMonad m) => Maybe Text -> [Text] -> [Text] -> m [Text]
+  getStreams' cursor acc ids = do
+    liveStreams <- twitchAPI Streams cursor ids
+    let livestream_ids =
+          liveStreams ^.. stream_data . traverse . streamEntry_user_id
+        acc'    = livestream_ids ++ acc
+        cursor' = liveStreams ^. stream_pagination . pagination_cursor
+    if isNothing cursor' then return acc' else getStreams' cursor' acc' ids
 
 
 
 getUserLoginName :: (TwitchMonad m) => [Text] -> m [Text]
 getUserLoginName ids = do
   foldM (\acc ids -> (acc ++) <$> getUserLoginName' ids) [] groupOfUserIds
-  where
-    paramRepeatLimit = 100
-    groupOfUserIds = LS.chunksOf paramRepeatLimit ids
-    getUserLoginName' :: (TwitchMonad m) => [Text] -> m [Text]
-    getUserLoginName' ids' = do
-      users <- twitchAPI Users Nothing ids'
-      return $ users ^.. twitch_data . traverse . user_login
+ where
+  paramRepeatLimit = 100
+  groupOfUserIds   = LS.chunksOf paramRepeatLimit ids
+  getUserLoginName' :: (TwitchMonad m) => [Text] -> m [Text]
+  getUserLoginName' ids' = do
+    users <- twitchAPI Users Nothing ids'
+    return $ users ^.. twitch_data . traverse . user_login
 
 
 
@@ -479,9 +549,9 @@ isHosting loginName = flip runReaderT twitchCfg $ do
 -- api which is checking that stream hosting other channel is `unsupported feature` for now.
 unsupportedTwitchAPI :: (TwitchMonad m, FromJSON a) => Text -> m a
 unsupportedTwitchAPI idParam = do
-  let url         = printf unsupportedApiFmt idParam
+  let url = printf unsupportedApiFmt idParam
   -- liftIO $ printf "querying with => %s\n" url
   r <- liftIO $ asJSON =<< get url
   return $ r ^. responseBody
-  where
-    unsupportedApiFmt = "https://tmi.twitch.tv/hosts?include_logins=1&host=%s" 
+ where
+  unsupportedApiFmt = "https://tmi.twitch.tv/hosts?include_logins=1&host=%s"
