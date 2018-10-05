@@ -7,6 +7,8 @@
 * TODO Bugfix [0/1]
  - [ ] Filter out hosting livestream from live stream list.
 
-* TODO Feature [0/1]
- - [ ] Download clips
+* TODO Feature [0/2]
+ - [ ] Download clips.
+ - [ ] Notification when registered stream goes live.
+
 
