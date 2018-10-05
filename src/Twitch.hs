@@ -324,6 +324,7 @@ getLive quality channelName = flip runReaderT twitchCfg $ do
 
 getArchive :: String -> String -> IO VideoInfo
 getArchive quality vodId = flip runReaderT twitchCfg $ do
+  print "in getArchive"
   fullUrl <- m3u8Url Archive quality vodId
   videos  <- twitchAPI Videos Nothing [(E.decodeUtf8 . CB.pack $ vodId)]
   let userId   = videos ^?! twitch_data . traverse . video_user_id
