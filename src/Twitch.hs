@@ -21,6 +21,9 @@ module Twitch
 where
 
 
+import           Control.Exception                        ( try
+                                                          , SomeException(..)
+                                                          )
 import           Control.Lens
 import           Control.Monad                            ( foldM )
 import           Control.Monad.Reader                     ( MonadIO
@@ -35,27 +38,32 @@ import           Data.Aeson                               ( fieldLabelModifier
                                                           )
 import           Data.Aeson.TH                            ( deriveJSON )
 import qualified Data.ByteString.Char8         as CB
-                                                          ( pack )
+                                                          ( pack
+                                                          , ByteString
+                                                          )
 import qualified Data.ByteString.Lazy.Char8    as LB
-                                                          ( unpack )
+                                                          ( unpack
+                                                          , ByteString
+                                                          )
 import           Data.List.Split               as LS
                                                           ( chunksOf )
 import           Data.Maybe                               ( fromMaybe
                                                           , isNothing
                                                           , maybe
                                                           )
+import           Data.Text                         hiding ( drop )
 import           Data.Text                     as T
                                                           ( length
                                                           , intercalate
                                                           )
-import           Data.Text                         hiding ( drop )
 import           Data.Text.Encoding            as E
                                                           ( encodeUtf8
                                                           , decodeUtf8
                                                           )
 import           Data.Time                                ( NominalDiffTime )
 import           GHC.Generics                             ( Generic )
-import           Network.Wreq                             ( responseBody
+import           Network.Wreq                             ( Response
+                                                          , responseBody
                                                           , defaults
                                                           , header
                                                           , param
@@ -418,8 +426,14 @@ getAccessToken streamType loginUserOrVodId = do
   clientId <- reader twitchcfg_clientid
   let tokenOpts = defaults & header "Client-ID" .~ [E.encodeUtf8 clientId]
       tokenUrl  = printf tokenFmt loginUserOrVodId
-  resp <- liftIO $ asJSON =<< getWith tokenOpts tokenUrl
-  return $ resp ^. responseBody
+  res <- liftIO $ do
+    r <-
+      try (getWith tokenOpts tokenUrl) :: IO
+        (Either SomeException (Response LB.ByteString))
+    case r of
+      Right resp' -> resp' -- return $ (asJSON resp') ^. responseBody
+      Left  _     -> error $ "some error: " ++ show e
+  asJSON res
  where
   archFmt  = "https://api.twitch.tv/api/vods/%s/access_token"
   liveFmt  = "https://api.twitch.tv/api/channels/%s/access_token"
