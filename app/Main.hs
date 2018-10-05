@@ -115,6 +115,7 @@ downloadAction cmdOpts = do
                         localIndexDvrM3u8
         else printf "%s" fullUrl
     else do
+      print "last branch"
       VideoInfo fullUrl user _ <- getLive (quality cmdOpts) target
       if ffmpeg cmdOpts
         then printEncodingCmdLive user fullUrl
