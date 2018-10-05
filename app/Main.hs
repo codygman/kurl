@@ -81,7 +81,7 @@ queryAction cmdOpts = do
 downloadAction :: CmdOpts -> IO ()
 downloadAction cmdOpts = do
   let (notLive, target) = parseVodUrl (fromJust . mainArg $ cmdOpts)
-
+  print "in downloadAction"
   if notLive
     then do
       (VideoInfo fullUrl user duration) <- getArchive (quality cmdOpts) target
