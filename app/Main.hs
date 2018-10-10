@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE LambdaCase   #-}
 
 
 module Main where
@@ -10,6 +11,7 @@ import           Data.Maybe                  (fromJust, fromMaybe, isJust)
 import           Data.List                   (isPrefixOf)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
+import qualified Dhall                    as Dh
 import           Options.Applicative
 import           System.Info                 (os)
 import           Text.Printf                 (printf)
@@ -20,6 +22,7 @@ import           M3u8                        (getStartIdx, getEndIdx,)
 import           TimeFormat                  (format4file, formatUtc, format4ffmpeg, makeOffset)
 import           TsIO                        (processM3U8, processTS, writeComments)
 import           Twitch                      (getLive, getArchive, getChatLogs, getLiveStreamList, VideoInfo(..))
+import           Conf                        (KurlConf(..))
 
 
 data CmdOpts = CmdOpts
@@ -37,32 +40,39 @@ data CmdOpts = CmdOpts
 data MainCmd = Target String | List String
 
 
+data LiveOrArchive = Live | Archive
+data BareOrFull    = Bare | Full
+
+
 main :: IO ()
 main = do
+  kurlConf <- Dh.input Dh.auto "./kurl.conf" :: IO KurlConf
+  -- kurlConf <- Dh.input Dh.auto "~/.config/kurl/kurl.conf" :: IO KurlConf
+
   cmdOpts <- parseCmdOpts
   if version cmdOpts
     then printf "kurl 1.2\n"
     else if isJust . mainArg $ cmdOpts
            then
              if list cmdOpts
-               then queryAction cmdOpts
-               else downloadAction cmdOpts
+               then queryAction kurlConf cmdOpts
+               else downloadAction kurlConf cmdOpts
            else
              printf "Missing TARGET\n"
 
 
-queryAction :: CmdOpts -> IO ()
-queryAction cmdOpts = do
-  liveStreams <- getLiveStreamList (pack . fromJust . mainArg $ cmdOpts)
+queryAction :: KurlConf -> CmdOpts -> IO ()
+queryAction kurlConf cmdOpts = do
+  liveStreams <- getLiveStreamList kurlConf (pack . fromJust . mainArg $ cmdOpts)
   mapM_ (printf "%s\n" . unpack) liveStreams
 
 
-downloadAction :: CmdOpts -> IO ()
-downloadAction cmdOpts = do
+downloadAction :: KurlConf -> CmdOpts -> IO ()
+downloadAction kurlConf cmdOpts = do
   let (notLive, target) = parseVodUrl (fromJust . mainArg $cmdOpts)
 
   if notLive then do
-    (VideoInfo fullUrl user duration) <- getArchive (quality cmdOpts) target
+    (VideoInfo fullUrl user duration) <- getArchive kurlConf (quality cmdOpts) target
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
@@ -73,7 +83,7 @@ downloadAction cmdOpts = do
 
         when (chat cmdOpts) $ do
           printf "Start downloading chat...\n"
-          downloadChat target user startNominalDiff endNominalDiff
+          downloadChat kurlConf target user startNominalDiff endNominalDiff
 
         when (ts cmdOpts) $ do
           -- TODO: this is not proper file name for index-dvr.m3u8
@@ -83,7 +93,7 @@ downloadAction cmdOpts = do
       else printf "%s" fullUrl
 
   else do
-    VideoInfo fullUrl user _ <- getLive (quality cmdOpts) target
+    VideoInfo fullUrl user _ <- getLive kurlConf (quality cmdOpts) target
     if ffmpeg cmdOpts
       then printEncodingCmdLive user fullUrl
       else printf "%s" fullUrl
@@ -132,10 +142,10 @@ parseCmdOpts = execParser $ info
     versionHelpMsg = "prints current kurl version."
 
 
-downloadChat :: String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
-downloadChat target user startNominalDiff endNominalDiff = do
+downloadChat :: KurlConf -> String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
+downloadChat kurlConf target user startNominalDiff endNominalDiff = do
   printf "start downloading all comments of vod: %s ...\n"  target
-  logs <- getChatLogs target startNominalDiff endNominalDiff
+  logs <- getChatLogs kurlConf target startNominalDiff endNominalDiff
   writeComments target user logs
 
 

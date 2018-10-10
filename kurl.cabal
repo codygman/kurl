@@ -21,10 +21,12 @@ library
                      , Twitch
                      , TsIO
                      , M3u8
+                     , Conf
   build-depends:       base >=4.10 && <5
                      , wreq
                      , aeson
                      , bytestring
+                     , dhall
                      , lens
                      , lens-aeson
                      , text
@@ -43,6 +45,7 @@ executable kurl
   -- other-modules:
   -- other-extensions:
   build-depends:       base >=4.10 && <5
+                     , dhall
                      , kurl
                      , text
                      , streamly

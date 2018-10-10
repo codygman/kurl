@@ -11,4 +11,7 @@
  - [ ] Download clips.
  - [ ] Notification when registered stream goes live.
 
-
+* Features:
+** TODO configuration via dhall
+** TODO A GUI. gtk or web?
+>>>>>>> config

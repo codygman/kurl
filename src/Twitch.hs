@@ -16,7 +16,6 @@ module Twitch
   , isHosting
   , VideoInfo(..)
   , StreamType(..)
-  , TwitchCfg(..)
   ) where
 
 
@@ -40,6 +39,7 @@ import           Text.Printf                       (printf)
 import           System.Random                     (getStdRandom, randomR)
 
 import           M3u8                              (StreamInfo, streaminfo_quality, streaminfo_url, parseM3u8)
+import           Conf                              (KurlConf(..))
 
 
 newtype TwitchData a = TwitchData
@@ -261,18 +261,13 @@ data VideoInfo = VideoInfo
   } deriving (Show)
 
 
-newtype TwitchCfg = TwitchCfg
-  { twitchcfg_clientid  :: Text
-  }
-
-type TwitchMonad m = (Monad m, MonadReader TwitchCfg m, MonadIO m)
+type TwitchMonad m = (Monad m, MonadReader KurlConf m, MonadIO m)
 
 
 data ApiKind = Videos | Users | Follows | Login | Streams
 
 
-data StreamType = Live | Archive
-  deriving (Show)
+data StreamType = Live | Archive deriving (Show)
 
 
 -- TODO: Remove hardcoded clientId. Maybe we can use Dhall as configuration.
@@ -280,18 +275,18 @@ data StreamType = Live | Archive
 -- TODO: Rate limit problem. for now remove hardcoded client for preventing rate limit.
 --       and add new documentation about getting twitch clientID
 
-twitchCfg :: TwitchCfg
-twitchCfg = TwitchCfg "Insert your Client-ID here"  -- cliendId
+-- twitchCfg :: TwitchCfg
+-- twitchCfg = TwitchCfg "Insert your Client-ID here"  -- cliendId
 
 
-getLive :: String -> String -> IO VideoInfo
-getLive quality channelName = flip runReaderT twitchCfg $ do
+getLive :: KurlConf -> String -> String -> IO VideoInfo
+getLive kurlConf quality channelName = flip runReaderT kurlConf $ do
   fullUrl <- m3u8Url Live quality channelName
   return $ VideoInfo (fullUrl ^. streaminfo_url . to pack) (pack channelName) Nothing
 
 
-getArchive :: String -> String -> IO VideoInfo
-getArchive quality vodId = flip runReaderT twitchCfg $ do
+getArchive :: KurlConf -> String -> String -> IO VideoInfo
+getArchive kurlConf quality vodId = flip runReaderT kurlConf $ do
   fullUrl <- m3u8Url Archive quality vodId
   videos  <- twitchAPI Videos Nothing [(E.decodeUtf8 . CB.pack $ vodId)]
   let userId   = videos ^?! twitch_data . traverse . video_user_id
@@ -303,7 +298,7 @@ getArchive quality vodId = flip runReaderT twitchCfg $ do
 
 twitchAPI :: (TwitchMonad m, FromJSON a) => ApiKind -> Maybe Text -> [Text] -> m a
 twitchAPI apiKind cursor idParams = do
-  clientId  <- reader twitchcfg_clientid
+  clientId  <- reader kurlConfClientId
   let cursorParam = maybe "" (printf "&after=%s") cursor
       url         = printf newApiFmt (T.intercalate queryParam idParams) <> cursorParam
       opts        = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
@@ -344,7 +339,7 @@ m3u8Url streamType streamQuality target = do
 
 m3u8Content :: TwitchMonad m => StreamType -> String -> AccessToken -> m String
 m3u8Content streamType loginUserOrVodId accessToken = do
-  clientId  <- reader twitchcfg_clientid
+  clientId  <- reader kurlConfClientId
   rnd <- liftIO $ getStdRandom (randomR (1, 99999 :: Int))
   let token     = accessToken ^. accesstoken_token
       sig       = accessToken ^. accesstoken_sig
@@ -370,7 +365,7 @@ m3u8Content streamType loginUserOrVodId accessToken = do
 
 getAccessToken :: TwitchMonad m => StreamType -> String -> m AccessToken
 getAccessToken streamType loginUserOrVodId = do
-  clientId <- reader twitchcfg_clientid
+  clientId <- reader kurlConfClientId
   let tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
       tokenUrl  = printf tokenFmt loginUserOrVodId
   resp <- liftIO $ asJSON =<< getWith tokenOpts tokenUrl
@@ -383,20 +378,8 @@ getAccessToken streamType loginUserOrVodId = do
                  Archive -> archFmt
 
 
-chatLogOffset :: TwitchMonad m => String -> Float -> m [Comment]
-chatLogOffset vodId offset = do
-  clientId <- reader twitchcfg_clientid
-  let url  = printf v5ApiFmt vodId offset
-      opts = defaults & header "Client-ID"    .~ [ E.encodeUtf8 clientId              ]
-                      & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
-  resp <- liftIO $ asJSON =<< getWith opts url
-  return $ resp ^. responseBody . comment_data
-  where
-    v5ApiFmt = "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f"
-
-
-getChatLogs :: String -> NominalDiffTime -> NominalDiffTime -> IO [(Text, Text, Text)]
-getChatLogs vodId startNominalDiff endNominalDiff = flip runReaderT twitchCfg $ do
+getChatLogs :: KurlConf -> String -> NominalDiffTime -> NominalDiffTime -> IO [(Text, Text, Text)]
+getChatLogs kurlConf vodId startNominalDiff endNominalDiff = flip runReaderT kurlConf $ do
   comments <- untilM ssec
                 (\csec nsec -> nsec == csec || nsec > esec)
                 (\csec comments -> fromMaybe csec $ comments & lastOf (traverse . comment_content_offset_seconds))
@@ -410,9 +393,22 @@ getChatLogs vodId startNominalDiff endNominalDiff = flip runReaderT twitchCfg $ 
     ssec = (fromIntegral . fromEnum $ startNominalDiff) / picoPrecision
     esec = (fromIntegral . fromEnum $ endNominalDiff)   / picoPrecision
 
+
+chatLogOffset :: TwitchMonad m => String -> Float -> m [Comment]
+chatLogOffset vodId offset = do
+  clientId <- reader kurlConfClientId
+  let url  = printf v5ApiFmt vodId offset
+      opts = defaults & header "Client-ID"    .~ [ E.encodeUtf8 clientId              ]
+                      & header "Content-Type" .~ [ "application/vnd.twitchtv.v5+json" ]
+  resp <- liftIO $ asJSON =<< getWith opts url
+  return $ resp ^. responseBody . comment_data
+  where
+    v5ApiFmt = "https://api.twitch.tv/v5/videos/%s/comments?content_offset_seconds=%f"
+
+
 -- Doing monadic operation until predicate returns true
 -- untilM initialValue predicate nextValue monadicAction
-untilM :: forall m a b. (Monad m) => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
+untilM :: forall m a b. TwitchMonad m => a -> (a -> a -> Bool) -> (a -> [b] -> a) -> (a -> m [b]) -> m [b]
 untilM a predicate next mf = do
   c <- mf a
   let a' = next a c
@@ -420,8 +416,8 @@ untilM a predicate next mf = do
   return $ mappend cs c
 
 
-getLiveStreamList :: Text -> IO [Text]
-getLiveStreamList loginName = flip runReaderT twitchCfg $ do
+getLiveStreamList :: KurlConf -> Text -> IO [Text]
+getLiveStreamList kurlConf loginName = flip runReaderT kurlConf $ do
    getFollowers loginName
      >>= getStreams
      >>= getUserLoginName
@@ -476,8 +472,8 @@ getUserLoginName ids = do
 
 
 
-isHosting :: Text -> IO [HostingEntry]
-isHosting loginName = flip runReaderT twitchCfg $ do
+isHosting :: KurlConf -> Text -> IO [HostingEntry]
+isHosting kurlConf loginName = flip runReaderT kurlConf $ do
   users <- twitchAPI Login Nothing [loginName]
   let userId = users ^?! twitch_data . traverse . user_id
   hosting <- unsupportedTwitchAPI userId
