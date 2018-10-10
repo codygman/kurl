@@ -52,18 +52,20 @@ main = do
   cmdOpts <- parseCmdOpts
   if version cmdOpts
     then printf "kurl 1.2\n"
-    else if isJust . mainArg $ cmdOpts
-           then
-             if list cmdOpts
-               then queryAction kurlConf cmdOpts
-               else downloadAction kurlConf cmdOpts
-           else
-             printf "Missing TARGET\n"
+    else if list cmdOpts
+           then do
+             let userName = kurlConfUserLoginName kurlConf <|> pack <$> mainArg cmdOpts
+             if isJust userName
+               then queryAction kurlConf (fromJust userName)
+               else printf "Missing User Name\n"
+           else if isJust . mainArg $ cmdOpts
+                  then downloadAction kurlConf cmdOpts
+                  else printf "Missing TARGET\n"
 
 
-queryAction :: KurlConf -> CmdOpts -> IO ()
-queryAction kurlConf cmdOpts = do
-  liveStreams <- getLiveStreamList kurlConf (pack . fromJust . mainArg $ cmdOpts)
+queryAction :: KurlConf -> Text -> IO ()
+queryAction kurlConf currentUserLoginName = do
+  liveStreams <- getLiveStreamList kurlConf currentUserLoginName
   mapM_ (printf "%s\n" . unpack) liveStreams
 
 
