@@ -47,10 +47,10 @@ executable kurl
   build-depends:       base >=4.10 && <5
                      , dhall
                      , kurl
+                     , lens
                      , text
                      , streamly
                      , mtl
                      , time
-                     , optparse-applicative
   hs-source-dirs:      app
   default-language:    Haskell2010

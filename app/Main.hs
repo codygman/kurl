@@ -5,18 +5,21 @@
 module Main where
 
 
+import           Control.Applicative         ((<|>))
 import           Control.Monad               (when)
-import           Data.Char                   (isNumber)
+import           Control.Lens
+import           Control.Lens.Combinators
+import           Data.Char                   (isNumber, isAlphaNum)
 import           Data.Maybe                  (fromJust, fromMaybe, isJust)
-import           Data.List                   (isPrefixOf)
+import           Data.List                   (isPrefixOf, intercalate)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
 import qualified Dhall                    as Dh
-import           Options.Applicative
 import           System.Info                 (os)
 import           Text.Printf                 (printf)
 import           Streamly                    (runStream, serially)
 import           Streamly.Prelude            (fromFoldableM)
+import           System.Environment
 
 import           M3u8                        (getStartIdx, getEndIdx,)
 import           TimeFormat                  (format4file, formatUtc, format4ffmpeg, makeOffset)
@@ -25,81 +28,107 @@ import           Twitch                      (getLive, getArchive, getChatLogs, 
 import           Conf                        (KurlConf(..))
 
 
-data CmdOpts = CmdOpts
-  { mainArg :: Maybe String
-  , quality :: String
-  , ts      :: Bool
-  , start   :: Maybe String
-  , end     :: Maybe String
-  , chat    :: Bool
-  , ffmpeg  :: Bool
-  , list    :: Bool
-  , version :: Bool
-  }
+data ArgType = MainCmd | MainArg | Quality | Start | End
 
-data MainCmd = Target String | List String
-
-
-data LiveOrArchive = Live | Archive
-data BareOrFull    = Bare | Full
+type Target = String
 
 
 main :: IO ()
 main = do
   -- kurlConf <- Dh.input Dh.auto "./kurl.conf" :: IO KurlConf
+  args <- getArgs
   kurlConf <- Dh.input Dh.auto "~/.config/kurl/kurl.conf" :: IO KurlConf
+  let mainCmd = parseArgs MainCmd args
+      mainArg = parseArgs MainArg args
+      quality = parseArgs Quality args
+      start   = parseArgs Start   args
+      end     = parseArgs End     args
+  case (mainCmd, mainArg) of
+    (Just "list" , _            ) -> case (pack <$> mainArg) <|> kurlConfUserLoginName kurlConf of
+                                       Just mainArg' -> listAction kurlConf mainArg'
+                                       Nothing       -> printf "No or incorrect user argument for list commnad.\n"
+    (Just "chat" , Just mainArg') -> chatAction kurlConf mainArg'
+    (Just "m3u"  , Just mainArg') -> m3uAction  kurlConf mainArg' quality
+    (Just "enc"  , Just mainArg') -> encAction  kurlConf mainArg' quality start end
+    (Just unknown, Just _       ) -> printf "Uknown command %s\n" unknown
+    (Nothing     , Just _       ) -> printf "No main command\n"
+    (Just mCmd   , Nothing      ) -> printf "Incorrect usage or no argument: `%s`\n" (Data.List.intercalate " " args)
+    _                             -> printf "version 1.2\n"
 
-  cmdOpts <- parseCmdOpts
-  if version cmdOpts then
-    printf "kurl 1.2\n"
-  else if list cmdOpts then do
-    let userName = pack <$> mainArg cmdOpts <|> kurlConfUserLoginName kurlConf
-    if isJust userName then
-      queryAction kurlConf (fromJust userName)
-    else
-      printf "Missing User Name\n"
-  else if isJust . mainArg $ cmdOpts then
-    downloadAction kurlConf cmdOpts
-  else
-    printf "Missing TARGET\n"
+
+parseArgs :: ArgType -> [String] -> Maybe String
+parseArgs argType args =
+  case argType of
+    MainCmd -> mainCmdArgSanityCheck
+    MainArg -> mainArgSanityCheck
+    Quality -> optionalArgsPosSanityCheck (isPrefixOf "q=")
+    Start   -> optionalArgsPosSanityCheck (isPrefixOf "s=")
+    End     -> optionalArgsPosSanityCheck (isPrefixOf "e=")
+  where
+    mainCmdArgSanityCheck =
+      case args ^? ix 0 of
+        Just "list"  -> Just "list"
+        Just "chat"  -> Just "chat"
+        Just "m3u"   -> Just "m3u"
+        Just "enc"   -> Just "enc"
+        _            -> Nothing
+    mainArgSanityCheck =
+      let mainArg = args ^? ix 1
+      in case mainArg of
+           Just arg -> case mainCmdArgSanityCheck of
+                         Just "list" -> if isUser arg then mainArg else Nothing
+                         Just "enc"  -> if isVod  arg then extractVodId <$> mainArg else Nothing
+                         Just "chat" -> if isVod  arg then extractVodId <$> mainArg else Nothing
+                         Just "m3u"  -> if isVod arg || isUser arg then mainArg else Nothing
+                         _           -> Nothing
+           Nothing  -> Nothing
+      where
+        isVod  inp = "https://www.twitch.tv/videos" `isPrefixOf` inp && all isNumber (extractVodId inp)
+        isUser inp = all isAlphaNum inp
+
+    optionalArgsPosSanityCheck pred =
+      if findIndexOf folded pred args >= Just 2
+        then extractValue <$> findOf folded pred args
+        else Nothing
+    extractValue =  reverse . takeWhile (/= '=') . reverse
+    extractVodId =  reverse . takeWhile (/= '/') . reverse
 
 
-queryAction :: KurlConf -> Text -> IO ()
-queryAction kurlConf currentUserLoginName = do
+listAction :: KurlConf -> Text -> IO ()
+listAction kurlConf currentUserLoginName = do
   liveStreams <- getLiveStreamList kurlConf currentUserLoginName
   mapM_ (printf "%s\n" . unpack) liveStreams
 
 
-downloadAction :: KurlConf -> CmdOpts -> IO ()
-downloadAction kurlConf cmdOpts = do
-  let (notLive, target) = parseVodUrl (fromJust . mainArg $cmdOpts)
+m3uAction :: KurlConf -> Target -> Maybe String -> IO ()
+m3uAction kurlConf target quality = do
+    let quality'             = fromMaybe "chunked" quality
+        (isArchive, target') = parseVodUrl target
+    (VideoInfo fullUrl user _) <- if isArchive
+      then getArchive kurlConf quality' target'
+      else getLive    kurlConf quality' target'
+    printf "%s" fullUrl
 
-  if notLive then do
-    (VideoInfo fullUrl user duration) <- getArchive kurlConf (quality cmdOpts) target
+
+encAction :: KurlConf -> Target -> Maybe String -> Maybe String -> Maybe String -> IO ()
+encAction kurlConf target quality start end = do
+    let quality' = (fromMaybe "chunked" quality)
+    (VideoInfo fullUrl user duration) <- getArchive kurlConf quality' target
     let defaultStart        = "00:00:00"
-        startNominalDiff    = makeOffset $ fromMaybe defaultStart (start cmdOpts)
-        endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) (end cmdOpts)
+        startNominalDiff    = makeOffset $ fromMaybe defaultStart start
+        endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) end
         durationNominalDiff = endNominalDiff - startNominalDiff
-    if ffmpeg cmdOpts
-      then do
-        printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
+    printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
 
-        when (chat cmdOpts) $ do
-          printf "Start downloading chat...\n"
-          downloadChat kurlConf target user startNominalDiff endNominalDiff
 
-        when (ts cmdOpts) $ do
-          -- TODO: this is not proper file name for index-dvr.m3u8
-          --       this must be extracted from full url.
-          let localIndexDvrM3u8 = "index-dvr.m3u8"
-          downloadVod target fullUrl startNominalDiff endNominalDiff localIndexDvrM3u8
-      else printf "%s" fullUrl
-
-  else do
-    VideoInfo fullUrl user _ <- getLive kurlConf (quality cmdOpts) target
-    if ffmpeg cmdOpts
-      then printEncodingCmdLive user fullUrl
-      else printf "%s" fullUrl
+chatAction :: KurlConf -> Target ->IO ()
+chatAction kurlConf target = do
+    (VideoInfo fullUrl user duration) <- getArchive kurlConf "chunked" target
+    let defaultStart        = "00:00:00"
+        startNominalDiff    = makeOffset $ fromMaybe defaultStart Nothing
+        endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) Nothing
+    printf "Start downloading chat...\n"
+    downloadChat kurlConf target user startNominalDiff endNominalDiff
 
 
 -- TODO: There's user name only consisted with numbers.
@@ -110,39 +139,6 @@ parseVodUrl strInp = let target = reverse . takeWhile (/= '/') . reverse $ strIn
                      in if all isNumber target && "https://www.twitch.tv/videos" `isPrefixOf` strInp
                           then  (True, target)
                           else  (False, target)
-
-
-parseCmdOpts :: IO CmdOpts
-parseCmdOpts = execParser $ info
-  ( cmd <**> helper ) ( fullDesc <> progDesc "Download twitch TARGET. TARGET is <vod url> or <channel name>."
-                                 <> header "kurl - a twitch vod downloader" )
-  where
-    cmd = CmdOpts
-      <$> optional (strArgument         ( metavar "TARGET"             <> help targetHelpMsg                     ))
-      <*> strOption           ( long "quality"  <> short 'q' <> help qualityHelpMsg <> value "chunked" )
-      <*> switch              ( long "ts"       <> short 't' <> help tsHelpMsg                         )
-      <*> optional (strOption ( long "start"    <> short 's' <> help startHelpMsg                      ) )
-      <*> optional (strOption ( long "end"      <> short 'e' <> help endHelpMsg                        ) )
-      <*> switch              ( long "chat"     <> short 'c' <> help chatHelpMsg                       )
-      <*> switch              ( long "ffmpeg"   <> short 'f' <> help ffmpegHelpMsg                     )
-      <*> switch              ( long "list"     <> short 'l' <> help listHelpMsg                       )
-      <*> switch              ( long "version"  <> short 'v' <> help versionHelpMsg                    )
-    targetHelpMsg  = " When downloading live type stream, TARGET must be \
-                     \ <channel name>. ex) kurl playhearthstone.         \
-                     \ When downloading archive type stream, TARGET must \
-                     \ be <vod url>. ex) kurl https://www.twitch.tv/videos/123456789"
-    qualityHelpMsg = "set stream quality. default is chunked."
-                     <> " chunked is source quality. ex) chunked, 720p60, 480p30"
-                     <> "ex) kurl https://www.twitch.tv/videos/123456789 --quality 720p60"
-    tsHelpMsg      = "download ts files of the vod. Supported on only archive type stream."
-    startHelpMsg   = "recording start offset. Format is 0h0m0s"
-                     <> "ex) kurl https://www.twitch.tv/videos/123456789 --start 30m"
-    endHelpMsg     = "recording end offset. Format is 0h0m0s"
-                     <> "ex) kurl https://www.twitch.tv/videos/123456789 --end 1h2m3s"
-    chatHelpMsg    = "download vod chat log. Supported on only archive type stream."
-    ffmpegHelpMsg  = "Prints ffmpeg command for downloading."
-    listHelpMsg    = "query current live streams which USER is following."
-    versionHelpMsg = "prints current kurl version."
 
 
 downloadChat :: KurlConf -> String -> Text -> NominalDiffTime -> NominalDiffTime -> IO ()
@@ -173,7 +169,7 @@ printEncodingCmdArchive target user s d e m3u8 = do
       duration  = format4ffmpeg d
       ext       = "mp4" :: String
       mp4       = pack $ printf "%s_%s_%s_%s.%s" user target (format4file s) (format4file e) ext
-      formatStr = unpack $ intercalate delim ["ffmpeg", "-ss %s", "-i %s", "-to %s", "-c:v copy","-c:a copy", "%s\n"]
+      formatStr = unpack $ Data.Text.intercalate delim ["ffmpeg", "-ss %s", "-i %s", "-to %s", "-c:v copy","-c:a copy", "%s\n"]
   printf formatStr offset m3u8 duration mp4
 
 
@@ -182,7 +178,7 @@ printEncodingCmdLive channelId m3u8 = do
   cutc <- getCurrentTime
   let ext       = "mp4" :: String
       mp4       = pack $ printf "%s_live_%s.%s" channelId (formatUtc cutc) ext
-      formatStr = unpack $ intercalate delim ["ffmpeg", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
+      formatStr = unpack $ Data.Text.intercalate delim ["ffmpeg", "-i %s", "-c:v copy","-c:a copy", "%s\n"]
   printf formatStr m3u8 mp4
 
 
