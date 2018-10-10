@@ -1,0 +1,3 @@
+documentation: false
+
+allow-newer: base, contravariant
