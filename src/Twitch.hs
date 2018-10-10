@@ -20,6 +20,7 @@ module Twitch
   ) where
 
 
+import           Control.Exception                 ( try, SomeException(..))
 import           Control.Lens
 import           Control.Monad                     (foldM)
 import           Control.Monad.Reader              (MonadIO, MonadReader, runReaderT, reader, liftIO)
@@ -441,20 +442,24 @@ getFollowers loginName = do
 
 getStreams :: (TwitchMonad m) => [Text] -> m [Text]
 getStreams ids = do
-  foldM (\acc ids -> (acc ++) <$> getStreams' Nothing [] ids) [] groupOfFollowIds
+  -- TODO: we must consider api rate limit.
+  foldM (\acc ids -> (acc ++) <$> getStreams' 1 Nothing [] ids) [] groupOfFollowIds
   where
+    -- 30 is the rate limit of api calls per minute.
+    apiCallRateLimit = 30
     -- 100 is the limit of multiple repeat of input parameter of user_id or user_login
     paramRepeatLimit = 100
     groupOfFollowIds = LS.chunksOf paramRepeatLimit ids
-    getStreams' :: (TwitchMonad m) => Maybe Text -> [Text] -> [Text] -> m [Text]
-    getStreams' cursor acc ids = do
+    getStreams' :: (TwitchMonad m) => Int -> Maybe Text -> [Text] -> [Text] -> m [Text]
+    getStreams' n cursor acc ids = do
+      -- liftIO $ printf "calling stream api #%d\n => %s" n (show acc)
       liveStreams <- twitchAPI Streams cursor ids
       let livestream_ids = liveStreams ^.. stream_data . traverse . streamEntry_user_id
           acc'    = livestream_ids  ++ acc
           cursor' = liveStreams ^. stream_pagination . pagination_cursor
-      if isNothing cursor'
+      if isNothing cursor' || acc == acc' || n == apiCallRateLimit - 10
         then return acc'
-        else getStreams' cursor' acc' ids
+        else getStreams' (n + 1) cursor' acc' ids
 
 
 
