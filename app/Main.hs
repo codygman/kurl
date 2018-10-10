@@ -50,17 +50,18 @@ main = do
   kurlConf <- Dh.input Dh.auto "~/.config/kurl/kurl.conf" :: IO KurlConf
 
   cmdOpts <- parseCmdOpts
-  if version cmdOpts
-    then printf "kurl 1.2\n"
-    else if list cmdOpts
-           then do
-             let userName = pack <$> mainArg cmdOpts <|> kurlConfUserLoginName kurlConf
-             if isJust userName
-               then queryAction kurlConf (fromJust userName)
-               else printf "Missing User Name\n"
-           else if isJust . mainArg $ cmdOpts
-                  then downloadAction kurlConf cmdOpts
-                  else printf "Missing TARGET\n"
+  if version cmdOpts then
+    printf "kurl 1.2\n"
+  else if list cmdOpts then do
+    let userName = pack <$> mainArg cmdOpts <|> kurlConfUserLoginName kurlConf
+    if isJust userName then
+      queryAction kurlConf (fromJust userName)
+    else
+      printf "Missing User Name\n"
+  else if isJust . mainArg $ cmdOpts then
+    downloadAction kurlConf cmdOpts
+  else
+    printf "Missing TARGET\n"
 
 
 queryAction :: KurlConf -> Text -> IO ()
