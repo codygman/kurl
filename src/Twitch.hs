@@ -308,8 +308,11 @@ twitchAPI apiKind cursor idParams = do
       url         = printf newApiFmt (T.intercalate queryParam idParams) <> cursorParam
       opts        = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
   -- liftIO $ printf "querying with => %s...\n" (Prelude.take 100 url)
-  r <- liftIO $ asJSON =<< getWith opts url
-  return $ r ^. responseBody
+  jsonResp <- liftIO $
+    (try :: IO a -> IO (Either SomeException a)) (getWith opts url) >>= \case
+    Left e     -> error $ "twitchAPI network IO error" ++ show e
+    Right resp -> asJSON resp
+  return $ jsonResp ^. responseBody
   where
     newApiFmt = case apiKind of
                   Videos  -> "https://api.twitch.tv/helix/videos?id=%s"
