@@ -460,7 +460,7 @@ getStreams ids = do
       let livestream_ids = liveStreams ^.. stream_data . traverse . streamEntry_user_id
           acc'    = livestream_ids  ++ acc
           cursor' = liveStreams ^. stream_pagination . pagination_cursor
-      if isNothing cursor' || acc == acc' || n == apiCallRateLimit - 10
+      if isNothing cursor' || Prelude.null livestream_ids || n == apiCallRateLimit - 10
         then return acc'
         else getStreams' (n + 1) cursor' acc' ids
 
