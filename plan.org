@@ -1,17 +1,9 @@
 
-* Show live streams that user followed or subscried. [3/3]
-  - [X] Reader the twtich API related to this feature
-  - [X] Design the UI
-  - [X] implement feature
-
-* TODO Bugfix [0/1]
+* Enhancements [0/1]
  - [ ] Filter out hosting livestream from live stream list.
 
-* TODO Feature [0/2]
+* Features [1/4]
+ - [X] configuration via dhall
  - [ ] Download clips.
+ - [ ] A GUI. gtk or web?
  - [ ] Notification when registered stream goes live.
-
-* Features:
-** TODO configuration via dhall
-** TODO A GUI. gtk or web?
->>>>>>> config
