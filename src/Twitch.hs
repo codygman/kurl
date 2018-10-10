@@ -270,14 +270,8 @@ data ApiKind = Videos | Users | Follows | Login | Streams
 data StreamType = Live | Archive deriving (Show)
 
 
--- TODO: Remove hardcoded clientId. Maybe we can use Dhall as configuration.
---       Do we even need Reader pattern here?
 -- TODO: Rate limit problem. for now remove hardcoded client for preventing rate limit.
 --       and add new documentation about getting twitch clientID
-
--- twitchCfg :: TwitchCfg
--- twitchCfg = TwitchCfg "Insert your Client-ID here"  -- cliendId
-
 
 getLive :: KurlConf -> String -> String -> IO VideoInfo
 getLive kurlConf quality channelName = flip runReaderT kurlConf $ do
