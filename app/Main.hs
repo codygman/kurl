@@ -46,8 +46,8 @@ data BareOrFull    = Bare | Full
 
 main :: IO ()
 main = do
-  kurlConf <- Dh.input Dh.auto "./kurl.conf" :: IO KurlConf
-  -- kurlConf <- Dh.input Dh.auto "~/.config/kurl/kurl.conf" :: IO KurlConf
+  -- kurlConf <- Dh.input Dh.auto "./kurl.conf" :: IO KurlConf
+  kurlConf <- Dh.input Dh.auto "~/.config/kurl/kurl.conf" :: IO KurlConf
 
   cmdOpts <- parseCmdOpts
   if version cmdOpts
