@@ -276,8 +276,11 @@ data StreamType = Live | Archive
 
 -- TODO: Remove hardcoded clientId. Maybe we can use Dhall as configuration.
 --       Do we even need Reader pattern here?
+-- TODO: Rate limit problem. for now remove hardcoded client for preventing rate limit.
+--       and add new documentation about getting twitch clientID
+
 twitchCfg :: TwitchCfg
-twitchCfg = TwitchCfg "g9r0psjr0nn0a4ypjh62b6p568jhom"  -- cliendId
+twitchCfg = TwitchCfg "Insert your Client-ID here"  -- cliendId
 
 
 getLive :: String -> String -> IO VideoInfo
