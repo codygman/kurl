@@ -54,7 +54,7 @@ main = do
     then printf "kurl 1.2\n"
     else if list cmdOpts
            then do
-             let userName = kurlConfUserLoginName kurlConf <|> pack <$> mainArg cmdOpts
+             let userName = pack <$> mainArg cmdOpts <|> kurlConfUserLoginName kurlConf
              if isJust userName
                then queryAction kurlConf (fromJust userName)
                else printf "Missing User Name\n"
