@@ -446,23 +446,21 @@ getFollowers loginName = do
 getStreams :: (TwitchMonad m) => [Text] -> m [Text]
 getStreams ids = do
   -- TODO: we must consider api rate limit.
-  foldM (\acc followIds -> (acc ++) <$> getStreams' 1 Nothing [] followIds) [] groupOfFollowIds
+  foldM (\acc followIds -> (acc ++) <$> getStreams' Nothing [] followIds) [] groupOfFollowIds
   where
-    -- 30 is the rate limit of api calls per minute.
-    apiCallRateLimit = 30
     -- 100 is the limit of multiple repeat of input parameter of user_id or user_login
     paramRepeatLimit = 100
     groupOfFollowIds = LS.chunksOf paramRepeatLimit ids
-    getStreams' :: (TwitchMonad m) => Int -> Maybe Text -> [Text] -> [Text] -> m [Text]
-    getStreams' n cursor acc followIds = do
+    getStreams' :: (TwitchMonad m) => Maybe Text -> [Text] -> [Text] -> m [Text]
+    getStreams' cursor acc followIds = do
       -- liftIO $ printf "calling stream api #%d\n => %s" n (show acc)
       liveStreams <- twitchAPI Streams cursor followIds
       let livestream_ids = liveStreams ^.. stream_data . traverse . streamEntry_user_id
           acc'    = livestream_ids  ++ acc
           cursor' = liveStreams ^. stream_pagination . pagination_cursor
-      if isNothing cursor' || Prelude.null livestream_ids || n == apiCallRateLimit - 10
+      if isNothing cursor' || Prelude.null livestream_ids
         then return acc'
-        else getStreams' (n + 1) cursor' acc' followIds
+        else getStreams' cursor' acc' followIds
 
 
 getUserLoginName :: (TwitchMonad m) => [Text] -> m [Text]
