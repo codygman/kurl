@@ -45,7 +45,7 @@ main = do
     (Just "list" , _            ) -> case (pack <$> mainArg) <|> kurlConfUserLoginName kurlConf of
                                        Just mainArg' -> listAction kurlConf mainArg'
                                        Nothing       -> printf "No or incorrect user argument for list commnad.\n"
-    (Just "chat" , Just mainArg') -> chatAction kurlConf mainArg'
+    (Just "chat" , Just mainArg') -> chatAction kurlConf mainArg' start end
     (Just "m3u"  , Just mainArg') -> m3uAction  kurlConf mainArg' quality
     (Just "enc"  , Just mainArg') -> encAction  kurlConf mainArg' quality start end
     (Just "ver"  , _            ) -> printf "version 1.3\n"
@@ -77,9 +77,9 @@ parseArgs argType args =
       in case mainArg of
            Just arg -> case mainCmdArgSanityCheck of
                          Just "list" -> if isUser arg then mainArg else Nothing
-                         Just "enc"  -> if isVod  arg then extractVodId <$> mainArg else Nothing
-                         Just "chat" -> if isVod  arg then extractVodId <$> mainArg else Nothing
+                         Just "enc"  -> if isVod arg || isUser arg then mainArg else Nothing
                          Just "m3u"  -> if isVod arg || isUser arg then mainArg else Nothing
+                         Just "chat" -> if isVod  arg then extractVodId <$> mainArg else Nothing
                          _           -> Nothing
            Nothing  -> Nothing
       where
@@ -113,20 +113,25 @@ m3uAction kurlConf target quality = do
 encAction :: KurlConf -> Target -> Maybe String -> Maybe String -> Maybe String -> IO ()
 encAction kurlConf target quality start end = do
     let quality' = (fromMaybe "chunked" quality)
-    (VideoInfo fullUrl user duration) <- getArchive kurlConf quality' target
+        (isArchive, target') = parseVodUrl target
+    if isArchive then do
+        (VideoInfo fullUrl user duration) <- getArchive kurlConf quality' target'
+        let defaultStart        = "00:00:00"
+            startNominalDiff    = makeOffset $ fromMaybe defaultStart start
+            endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) end
+            durationNominalDiff = endNominalDiff - startNominalDiff
+        printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
+    else do
+      (VideoInfo fullUrl _ _) <- getLive kurlConf quality' target'
+      printEncodingCmdLive target fullUrl
+
+
+chatAction :: KurlConf -> Target -> Maybe String -> Maybe String -> IO ()
+chatAction kurlConf target start end = do
+    (VideoInfo _ user duration) <- getArchive kurlConf "chunked" target
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset $ fromMaybe defaultStart start
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) end
-        durationNominalDiff = endNominalDiff - startNominalDiff
-    printEncodingCmdArchive target user startNominalDiff durationNominalDiff endNominalDiff fullUrl
-
-
-chatAction :: KurlConf -> Target ->IO ()
-chatAction kurlConf target = do
-    (VideoInfo _ user duration) <- getArchive kurlConf "chunked" target
-    let defaultStart        = "00:00:00"
-        startNominalDiff    = makeOffset $ fromMaybe defaultStart Nothing
-        endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) Nothing
     printf "Start downloading chat...\n"
     downloadChat kurlConf target user startNominalDiff endNominalDiff
 
@@ -163,7 +168,7 @@ downloadVod target url startNominalDiff endNominalDiff m3u8 = do
   runStream . serially $ fromFoldableM $ fmap (processTS url) [ s .. e ]
 
 
-printEncodingCmdArchive :: String -> Text -> NominalDiffTime -> NominalDiffTime -> NominalDiffTime -> Text -> IO ()
+printEncodingCmdArchive :: Target -> Text -> NominalDiffTime -> NominalDiffTime -> NominalDiffTime -> Text -> IO ()
 printEncodingCmdArchive target user s d e m3u8 = do
   let offset    = format4ffmpeg s
       duration  = format4ffmpeg d
@@ -173,7 +178,7 @@ printEncodingCmdArchive target user s d e m3u8 = do
   printf formatStr offset m3u8 duration mp4
 
 
-printEncodingCmdLive :: Text ->  Text -> IO ()
+printEncodingCmdLive :: Target ->  Text -> IO ()
 printEncodingCmdLive channelId m3u8 = do
   cutc <- getCurrentTime
   let ext       = "mp4" :: String
