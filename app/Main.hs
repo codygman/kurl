@@ -6,11 +6,9 @@ module Main where
 
 
 import           Control.Applicative         ((<|>))
-import           Control.Monad               (when)
 import           Control.Lens
-import           Control.Lens.Combinators
 import           Data.Char                   (isNumber, isAlphaNum)
-import           Data.Maybe                  (fromJust, fromMaybe, isJust)
+import           Data.Maybe                  (fromJust, fromMaybe)
 import           Data.List                   (isPrefixOf, intercalate)
 import           Data.Time                   (NominalDiffTime, getCurrentTime)
 import           Data.Text                   (Text, pack, unpack, intercalate)
@@ -30,12 +28,12 @@ import           Conf                        (KurlConf(..))
 
 data ArgType = MainCmd | MainArg | Quality | Start | End
 
+
 type Target = String
 
 
 main :: IO ()
 main = do
-  -- kurlConf <- Dh.input Dh.auto "./kurl.conf" :: IO KurlConf
   args <- getArgs
   kurlConf <- Dh.input Dh.auto "~/.config/kurl/kurl.conf" :: IO KurlConf
   let mainCmd = parseArgs MainCmd args
@@ -50,10 +48,11 @@ main = do
     (Just "chat" , Just mainArg') -> chatAction kurlConf mainArg'
     (Just "m3u"  , Just mainArg') -> m3uAction  kurlConf mainArg' quality
     (Just "enc"  , Just mainArg') -> encAction  kurlConf mainArg' quality start end
+    (Just "ver"  , _            ) -> printf "version 1.3\n"
     (Just unknown, Just _       ) -> printf "Uknown command %s\n" unknown
     (Nothing     , Just _       ) -> printf "No main command\n"
-    (Just mCmd   , Nothing      ) -> printf "Incorrect usage or no argument: `%s`\n" (Data.List.intercalate " " args)
-    _                             -> printf "version 1.2\n"
+    (Just _      , Nothing      ) -> printf "Incorrect usage or no argument: `%s`\n" (Data.List.intercalate " " args)
+    _                             -> printf "Available commands: list m3u enc chat ver\n"
 
 
 parseArgs :: ArgType -> [String] -> Maybe String
@@ -66,11 +65,12 @@ parseArgs argType args =
     End     -> optionalArgsPosSanityCheck (isPrefixOf "e=")
   where
     mainCmdArgSanityCheck =
-      case args ^? ix 0 of
+      case args ^? ix 0 of 
         Just "list"  -> Just "list"
         Just "chat"  -> Just "chat"
         Just "m3u"   -> Just "m3u"
         Just "enc"   -> Just "enc"
+        Just "ver"   -> Just "ver"
         _            -> Nothing
     mainArgSanityCheck =
       let mainArg = args ^? ix 1
@@ -86,9 +86,9 @@ parseArgs argType args =
         isVod  inp = "https://www.twitch.tv/videos" `isPrefixOf` inp && all isNumber (extractVodId inp)
         isUser inp = all isAlphaNum inp
 
-    optionalArgsPosSanityCheck pred =
-      if findIndexOf folded pred args >= Just 2
-        then extractValue <$> findOf folded pred args
+    optionalArgsPosSanityCheck argPred =
+      if findIndexOf folded argPred args >= Just 2
+        then extractValue <$> findOf folded argPred args
         else Nothing
     extractValue =  reverse . takeWhile (/= '=') . reverse
     extractVodId =  reverse . takeWhile (/= '/') . reverse
@@ -104,7 +104,7 @@ m3uAction :: KurlConf -> Target -> Maybe String -> IO ()
 m3uAction kurlConf target quality = do
     let quality'             = fromMaybe "chunked" quality
         (isArchive, target') = parseVodUrl target
-    (VideoInfo fullUrl user _) <- if isArchive
+    (VideoInfo fullUrl _ _) <- if isArchive
       then getArchive kurlConf quality' target'
       else getLive    kurlConf quality' target'
     printf "%s" fullUrl
@@ -123,7 +123,7 @@ encAction kurlConf target quality start end = do
 
 chatAction :: KurlConf -> Target ->IO ()
 chatAction kurlConf target = do
-    (VideoInfo fullUrl user duration) <- getArchive kurlConf "chunked" target
+    (VideoInfo _ user duration) <- getArchive kurlConf "chunked" target
     let defaultStart        = "00:00:00"
         startNominalDiff    = makeOffset $ fromMaybe defaultStart Nothing
         endNominalDiff      = makeOffset $ fromMaybe (unpack . fromJust $ duration) Nothing
