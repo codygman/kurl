@@ -66,11 +66,11 @@ main = do
     ArgChat arg           -> chatAction kurlConf arg start end
     ArgM3u arg            -> m3uAction kurlConf arg quality
     ArgEnc arg            -> encAction kurlConf arg quality start end
-    ArgMalformed arg      -> printf "Malformed argument %s\n for command %s" arg (show mainCmd)
-    ArgUnknownCmd unknown -> printf "Unknown command %s\n" unknown 
+    ArgMalformed arg      -> printf "Malformed argument `%s` for command `%s`\n" arg (show mainCmd)
+    ArgUnknownCmd unknown -> printf "Unknown command `%s`\n" unknown 
     ArgVer                -> printf "version 1.3\n"
-    ArgMissing            -> printf "Argument is missing for command %s\n" (show mainCmd)
-    ArgNothing            -> printf "Available commands: list m3u enc chat ver\n"
+    ArgMissing            -> printf "Argument is missing for command `%s`\n" (show mainCmd)
+    ArgNothing            -> printf "Available commands: `list` `m3u` `enc` `chat` `ver`\n"
 
 
 parseOptionalArgs :: ArgType -> [String] -> Maybe String
@@ -116,9 +116,15 @@ parseMainArg kurlConf command args =
       CmdUnknown unknown -> ArgUnknownCmd unknown
       _                  -> ArgMissing
     where
-      isVod  inp   = "https://www.twitch.tv/videos" `isPrefixOf` inp && all isNumber (extractVodId inp)
-      isUser inp   = all isAlphaNum inp
       extractVodId =  reverse . takeWhile (/= '/') . reverse
+      isVod  inp = "https://www.twitch.tv/videos" `isPrefixOf` inp && all isNumber (extractVodId inp)
+      -- TODO: use regex to validate user id
+      isUser :: String -> Bool
+      isUser inp = let len = length inp
+                   in len >= 3
+                      && len <= 25
+                      && (inp ^? ix 0) /= Just '_'
+                      && all (\x -> isAlphaNum x || '_' == x) inp
 
 
 listAction :: KurlConf -> String -> IO ()
