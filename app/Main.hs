@@ -26,7 +26,27 @@ import           Twitch                      (getLive, getArchive, getChatLogs, 
 import           Conf                        (KurlConf(..))
 
 
-data ArgType = MainCmd | MainArg | Quality | Start | End
+data ArgType = Quality | Start | End
+
+data Command = CmdList
+  | CmdM3u
+  | CmdEnc
+  | CmdChat
+  | CmdVer
+  | CmdUnknown String
+  | CmdNothing
+  deriving (Show)
+
+
+data ArgMain = ArgList String
+  | ArgM3u String
+  | ArgEnc String
+  | ArgChat String
+  | ArgVer
+  | ArgMalformed String
+  | ArgUnknownCmd String
+  | ArgNothing
+  | ArgMissing
 
 
 type Target = String
@@ -36,67 +56,74 @@ main :: IO ()
 main = do
   args <- getArgs
   kurlConf <- Dh.input Dh.auto "~/.config/kurl/kurl.conf" :: IO KurlConf
-  let mainCmd = parseArgs MainCmd args
-      mainArg = parseArgs MainArg args
-      quality = parseArgs Quality args
-      start   = parseArgs Start   args
-      end     = parseArgs End     args
-  case (mainCmd, mainArg) of
-    (Just "list" , _            ) -> case (pack <$> mainArg) <|> kurlConfUserLoginName kurlConf of
-                                       Just mainArg' -> listAction kurlConf mainArg'
-                                       Nothing       -> printf "No or incorrect user argument for list commnad.\n"
-    (Just "chat" , Just mainArg') -> chatAction kurlConf mainArg' start end
-    (Just "m3u"  , Just mainArg') -> m3uAction  kurlConf mainArg' quality
-    (Just "enc"  , Just mainArg') -> encAction  kurlConf mainArg' quality start end
-    (Just "ver"  , _            ) -> printf "version 1.3\n"
-    (Just unknown, Just _       ) -> printf "Uknown command %s\n" unknown
-    (Nothing     , Just _       ) -> printf "No main command\n"
-    (Just _      , Nothing      ) -> printf "Incorrect usage or no argument: `%s`\n" (Data.List.intercalate " " args)
-    _                             -> printf "Available commands: list m3u enc chat ver\n"
+  let mainCmd = parseMainCmd args 
+      mainArg = parseMainArg kurlConf mainCmd args
+      quality = parseOptionalArgs Quality args
+      start   = parseOptionalArgs Start args
+      end     = parseOptionalArgs End args
+  case mainArg of
+    ArgList arg           -> listAction kurlConf arg
+    ArgChat arg           -> chatAction kurlConf arg start end
+    ArgM3u arg            -> m3uAction kurlConf arg quality
+    ArgEnc arg            -> encAction kurlConf arg quality start end
+    ArgMalformed arg      -> printf "Malformed argument %s\n for command %s" arg (show mainCmd)
+    ArgUnknownCmd unknown -> printf "Unknown command %s\n" unknown 
+    ArgVer                -> printf "version 1.3\n"
+    ArgMissing            -> printf "Argument is missing for command %s\n" (show mainCmd)
+    ArgNothing            -> printf "Available commands: list m3u enc chat ver\n"
 
 
-parseArgs :: ArgType -> [String] -> Maybe String
-parseArgs argType args =
+parseOptionalArgs :: ArgType -> [String] -> Maybe String
+parseOptionalArgs argType args =
   case argType of
-    MainCmd -> mainCmdArgSanityCheck
-    MainArg -> mainArgSanityCheck
     Quality -> optionalArgsPosSanityCheck (isPrefixOf "q=")
     Start   -> optionalArgsPosSanityCheck (isPrefixOf "s=")
     End     -> optionalArgsPosSanityCheck (isPrefixOf "e=")
   where
-    mainCmdArgSanityCheck =
-      case args ^? ix 0 of 
-        Just "list"  -> Just "list"
-        Just "chat"  -> Just "chat"
-        Just "m3u"   -> Just "m3u"
-        Just "enc"   -> Just "enc"
-        Just "ver"   -> Just "ver"
-        _            -> Nothing
-    mainArgSanityCheck =
-      let mainArg = args ^? ix 1
-      in case mainArg of
-           Just arg -> case mainCmdArgSanityCheck of
-                         Just "list" -> if isUser arg then mainArg else Nothing
-                         Just "enc"  -> if isVod arg || isUser arg then mainArg else Nothing
-                         Just "m3u"  -> if isVod arg || isUser arg then mainArg else Nothing
-                         Just "chat" -> if isVod  arg then extractVodId <$> mainArg else Nothing
-                         _           -> Nothing
-           Nothing  -> Nothing
-      where
-        isVod  inp = "https://www.twitch.tv/videos" `isPrefixOf` inp && all isNumber (extractVodId inp)
-        isUser inp = all isAlphaNum inp
-
     optionalArgsPosSanityCheck argPred =
       if findIndexOf folded argPred args >= Just 2
         then extractValue <$> findOf folded argPred args
         else Nothing
     extractValue =  reverse . takeWhile (/= '=') . reverse
-    extractVodId =  reverse . takeWhile (/= '/') . reverse
 
 
-listAction :: KurlConf -> Text -> IO ()
+parseMainCmd :: [String] -> Command
+parseMainCmd args = case args ^? ix 0 of
+  Just "list"  -> CmdList
+  Just "enc"   -> CmdEnc
+  Just "m3u"   -> CmdM3u
+  Just "chat"  -> CmdChat
+  Just "ver"   -> CmdVer
+  Just unknown -> CmdUnknown unknown
+  Nothing      -> CmdNothing
+
+
+parseMainArg :: KurlConf -> Command -> [String] -> ArgMain
+parseMainArg kurlConf command args =
+  case args ^? ix 1 of
+    Just arg -> case command of
+      CmdList        -> if isUser arg then ArgList arg else ArgMalformed arg
+      CmdEnc         -> if isVod arg || isUser arg then ArgEnc arg else ArgMalformed arg
+      CmdM3u         -> if isVod arg || isUser arg then ArgM3u arg else ArgMalformed arg
+      CmdChat        -> if isVod arg then ArgChat $ extractVodId arg else ArgMalformed arg
+      CmdUnknown cmd -> ArgUnknownCmd cmd
+    Nothing -> case command of
+      CmdList           -> case kurlConfUserLoginName kurlConf of
+                             Just loginName -> ArgList $ unpack loginName
+                             Nothing        -> ArgMissing
+      CmdNothing         -> ArgNothing
+      CmdVer             -> ArgVer
+      CmdUnknown unknown -> ArgUnknownCmd unknown
+      _                  -> ArgMissing
+    where
+      isVod  inp   = "https://www.twitch.tv/videos" `isPrefixOf` inp && all isNumber (extractVodId inp)
+      isUser inp   = all isAlphaNum inp
+      extractVodId =  reverse . takeWhile (/= '/') . reverse
+
+
+listAction :: KurlConf -> String -> IO ()
 listAction kurlConf currentUserLoginName = do
-  liveStreams <- getLiveStreamList kurlConf currentUserLoginName
+  liveStreams <- getLiveStreamList kurlConf (pack currentUserLoginName)
   mapM_ (printf "%s\n" . unpack) liveStreams
 
 
