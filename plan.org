@@ -1,14 +1,12 @@
 
-* Show live streams that user followed or subscried. [3/3]
-  - [X] Reader the twtich API related to this feature
-  - [X] Design the UI
-  - [X] implement feature
-
-* TODO Bugfix [0/1]
+* Enhancements [0/1]
  - [ ] Filter out hosting livestream from live stream list.
 
-* TODO Feature [0/2]
+* Features [1/3]
+ - [X] configuration via dhall
  - [ ] Download clips.
- - [ ] Notification when registered stream goes live.
+ - [ ] A GUI. gtk or web?
 
-
+* Thoughts
+** WAIT wreq throws exception on non 200 https response code.
+- maybe we should change underlying library from wreq to servant.
