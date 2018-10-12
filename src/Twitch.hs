@@ -366,8 +366,8 @@ getAccessToken streamType loginUserOrVodId = do
   clientId <- reader twitchcfg_clientid
   let tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
       tokenUrl  = printf tokenFmt loginUserOrVodId
-  resp <- liftIO $ asJSON =<< getWith tokenOpts tokenUrl
-  return $ resp ^. responseBody
+  resp <- liftIO $ getWith tokenOpts tokenUrl
+  return $ (asJSON resp) ^. responseBody
   where
     archFmt  = "https://api.twitch.tv/api/vods/%s/access_token"
     liveFmt  = "https://api.twitch.tv/api/channels/%s/access_token"
