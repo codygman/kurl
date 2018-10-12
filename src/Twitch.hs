@@ -20,6 +20,7 @@ module Twitch
   ) where
 
 
+import           Control.Exception                 (SomeException)
 import           Control.Lens
 import           Control.Monad                     (foldM)
 import           Control.Monad.Reader              (MonadIO, MonadReader, runReaderT, reader, liftIO)
@@ -34,7 +35,7 @@ import           Data.Text                  as T   (length, intercalate)
 import           Data.Text.Encoding         as E   (encodeUtf8, decodeUtf8)
 import           Data.Time                         (NominalDiffTime)
 import           GHC.Generics                      (Generic)
-import           Network.Wreq                      (responseBody, defaults, header, param, asJSON, getWith, get)
+import           Network.Wreq                      (Response, responseBody, defaults, header, param, asJSON, getWith, get)
 import           Text.Printf                       (printf)
 import           System.Random                     (getStdRandom, randomR)
 
@@ -366,8 +367,10 @@ getAccessToken streamType loginUserOrVodId = do
   clientId <- reader twitchcfg_clientid
   let tokenOpts = defaults & header "Client-ID" .~ [ E.encodeUtf8 clientId ]
       tokenUrl  = printf tokenFmt loginUserOrVodId
-  resp <- liftIO $ getWith tokenOpts tokenUrl
-  return $ (asJSON resp) ^. responseBody
+  resp <- liftIO (try (asJSON =<< getWith tokenOpts tokenUrl) :: IO (Either SomeException (Response AccessToken)))
+  case resp of
+    Right resp' -> return $ resp' ^. responseBody
+    Left e -> error $ "An error happened: " ++ show e
   where
     archFmt  = "https://api.twitch.tv/api/vods/%s/access_token"
     liveFmt  = "https://api.twitch.tv/api/channels/%s/access_token"
